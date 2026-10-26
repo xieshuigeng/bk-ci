@@ -1,0 +1,8 @@
+server:
+  port: 5000
+
+auth:
+  url: http://bkrepo.local/docker/v2/auth
+
+docker:
+  domain: bkrepo.local

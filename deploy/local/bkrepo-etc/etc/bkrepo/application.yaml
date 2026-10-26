@@ -1,0 +1,39 @@
+spring:
+  cloud:
+    consul:
+      discovery:
+        tags: devops
+  data:
+    mongodb:
+      uri: mongodb://bkci-bkrepo-mongo:27017/bkrepo
+      transaction:
+        enabled: false
+  redis:
+    host: bkci-redis
+    password: 
+    port: 6379
+
+logging:
+  config: classpath:logback-config.xml
+  path: /data/workspace/logs
+
+storage:
+  type: filesystem
+  filesystem:
+    path: /data/workspace/storage
+  innercos:
+    secretId: 
+    secretKey: 
+    region: 
+    bucket: 
+    cache:
+      enabled: false
+      path: /data/workspace/cache/cached
+      expireDays: 7
+      loadCacheFirst: true
+    upload:
+      location: /data/workspace/cache/temp
+
+security:
+  auth:
+    enabled: true

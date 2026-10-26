@@ -1,0 +1,420 @@
+name: bkci
+
+networks:
+  bkci:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-backend: &backend
+  image: bkci-local/bkci-backend:v4.2.0-rc.7
+  restart: unless-stopped
+  logging: *default-logging
+  networks:
+    - bkci
+  environment:
+    SPRING_CLOUD_CONSUL_HOST: consul
+    SPRING_CLOUD_CONSUL_PORT: "8500"
+    SPRING_APPLICATION_JSON: '{"spring":{"cloud":{"consul":{"discovery":{"prefer-ip-address":true,"register-health-check":false}}}}}'
+    DEVOPS_GATEWAY: http://localhost:8080
+    BK_HOME: /data/bkhome
+    DISPATCH_WORKERFILE: /data/workspace/agent-package/jar/worker-agent.jar
+    DISPATCH_DOCKERFILE: /data/workspace/agent-package/jar/worker-agent.jar
+    DISPATCH_SCRIPTS: /data/workspace/agent-package/script
+    KUBERNETES_ENABLE: "true"
+  volumes:
+    - ./rendered/etc/ci:/etc/bkci/conf:ro
+    - ./entrypoint-service.sh:/entrypoint.sh:ro
+  depends_on:
+    mysql: { condition: service_healthy }
+    redis: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+    consul: { condition: service_started }
+    es: { condition: service_healthy }
+
+services:
+  # ---------- 基础设施 ----------
+  mysql:
+    image: mysql:8.0.37
+    container_name: bkci-mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_bin
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../../docker-images/core/ci/ci-docker/support-files/sql:/sql:ro
+      - ./init-sql.sh:/init-sql.sh:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot123"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+    networks: { bkci: {} }
+    logging: *default-logging
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: bkci-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: { bkci: {} }
+    logging: *default-logging
+
+  es:
+    image: elastic.m.daocloud.io/elasticsearch/elasticsearch:7.17.22
+    container_name: bkci-es
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      cluster.name: bkee-es
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS localhost:9200/_cluster/health?wait_for_status=yellow\\&timeout=5s || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+    networks: { bkci: {} }
+    logging: *default-logging
+
+  rabbitmq:
+    image: bkci/rabbitmq-with-delay:0.0.1
+    container_name: bkci-rabbitmq
+    restart: unless-stopped
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_delayed_message_exchange && exec rabbitmq-server"]
+    environment:
+      RABBITMQ_USERNAME: bk_ci
+      RABBITMQ_PASSWORD: bk_ci123
+      RABBITMQ_VHOST: bk_ci
+    ports:
+      - "5672:5672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+    networks: { bkci: {} }
+    logging: *default-logging
+
+  consul:
+    image: hashicorp/consul:1.18
+    container_name: bkci-consul
+    restart: unless-stopped
+    command: agent -server -bootstrap -ui -client=0.0.0.0 -data-dir=/consul/data -config-dir=/consul/config
+    ports:
+      - "8500:8500"
+    volumes:
+      - consul-data:/consul/data
+      - ./bkrepo-consul-services.json:/consul/config/services.json:ro
+    networks:
+      bkci:
+        ipv4_address: 172.28.0.10
+    logging: *default-logging
+
+  dnsmasq:
+    # 本地构建说明: 官方 2.85 tag 在可达 mirror 均不存在, 此镜像实为 docker.1ms.run/andyshinn/dnsmasq:latest (2.84rc2) 的 retag
+    image: andyshinn/dnsmasq:2.85
+    container_name: bkci-dnsmasq
+    restart: unless-stopped
+    command:
+      - --no-resolv
+      - --server=/consul/172.28.0.10#8600
+      - --server=114.114.114.114
+      - --server=223.5.5.5
+      - --log-queries
+    networks:
+      bkci:
+        ipv4_address: 172.28.0.53
+    logging: *default-logging
+
+  # ---------- 前端 ----------
+  frontend:
+    image: bkci-local/bkci-frontend:v4.2.0-rc.7
+    container_name: bkci-frontend
+    restart: unless-stopped
+    networks:
+      - bkci
+    command:
+      - /bin/sh
+      - -c
+      - |
+        export INSTALL_PATH=/data/workspace BK_HOME=/data/bkhome
+        cd /etc/bkci && /data/workspace/scripts/render_tpl -m . /data/workspace/templates/frontend*
+        exec /usr/local/openresty/nginx/sbin/nginx -g 'daemon off;'
+    volumes:
+      - ./bkenv.properties:/etc/bkci/bkenv.properties:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    logging: *default-logging
+
+  gateway:
+    image: bkci-local/bkci-gateway:v4.2.0-rc.7
+    container_name: bkci-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    dns:
+      - 172.28.0.53 # 须与 dnsmasq ipv4_address 一致
+    networks:
+      - bkci
+    environment:
+      BK_HOME: /data/bkhome
+    command:
+      - /bin/bash
+      - -c
+      - |
+        export INSTALL_PATH=/data/workspace BK_HOME=/data/bkhome
+        cd /etc/bkci && /data/workspace/scripts/render_tpl -m . /data/workspace/templates/gateway*
+        # 本地 docker(非 k8s): auth_gray.lua 在无 NAMESPACE 时把 X-FRONTEND-SERVICE 设为 config.kubernetes.domain,
+        # 模板硬编码 kubernetes.demo.com, 改指向 Consul DNS 中注册的 frontend(需先执行 register-frontend.sh)。
+        sed -i 's/kubernetes\.demo\.com/frontend.service.consul/g' /data/workspace/gateway/core/lua/init.lua
+        grep -q 'frontend.service.consul' /data/workspace/gateway/core/lua/init.lua || { echo 'patch kubernetes.demo.com failed' >&2; exit 1; }
+        # 本地 redis 无密码: 模板将 pass 渲染为空串(""非nil, lua 仍会 AUTH 报错), 按模板注释说明置 nil
+        sed -i 's/pass = "",/pass = nil,/' /data/workspace/gateway/core/lua/init.lua
+        grep -q 'pass = nil' /data/workspace/gateway/core/lua/init.lua || { echo 'patch redis pass = nil failed' >&2; exit 1; }
+        # 本地为"裸机 Consul"拓扑(非 PaaS/K8s): 网关默认 kubernetes 模式会把 X-FRONTEND-SERVICE 指向 config.kubernetes.domain
+        # 并走 "<k8s-domain>/ms/<service>" 的容器路由; 本部署无该 /ms/ 路由(前端仅静态)。改为直连 Consul DNS SRV。
+        # 新增 route_ms 开关(默认 true), 置 false 后 tag_util 不再加 kubernetes- 前缀、loadbalance_util 不再走 /ms/ 分支,
+        # 落回其内置的 Consul DNS SRV 查询分支(查询名 <tag>.<service><suffix>.service.consul)。
+        sed -i 's|        special_domain = {},|        special_domain = {}, route_ms = false,|' /data/workspace/gateway/core/lua/init.lua
+        grep -q 'route_ms = false' /data/workspace/gateway/core/lua/init.lua || { echo 'patch route_ms failed' >&2; exit 1; }
+        # 服务在后端注册为纯 "<service>"(common.yml 的 service-suffix 被 entrypoint -Dservice-suffix= 置空覆盖),
+        # 故 ns.suffix 的 "-devops" 需置空, 查询名才是 devops.<service>.service.consul(dnsmasq 已可解析)。
+        sed -i 's|        suffix = "-devops",|        suffix = "",|' /data/workspace/gateway/core/lua/init.lua
+        grep -q '        suffix = "",' /data/workspace/gateway/core/lua/init.lua || { echo 'patch ns suffix failed' >&2; exit 1; }
+        # 网关内嵌 lua resolver 直连 consul DNS(非 dnsmasq), consul DNS 监听 8600 而非 53; 保持 ip={"consul"} 即可。
+        sed -i '/    ns = {/,/    },/ s|        port = 53,|        port = 8600,|' /data/workspace/gateway/core/lua/init.lua
+        grep -q '        port = 8600,' /data/workspace/gateway/core/lua/init.lua || { echo 'patch ns dns port failed' >&2; exit 1; }
+        # tag_util: route_ms=false 时不要给 tag 加 kubernetes- 前缀(否则会触发容器路由)
+        sed -i 's|and not string.find(tag, .\^kubernetes-.) then|and not string.find(tag, "^kubernetes-") and config.kubernetes.route_ms then|' /data/workspace/gateway/core/lua/util/tag_util.lua
+        grep -q 'config.kubernetes.route_ms then' /data/workspace/gateway/core/lua/util/tag_util.lua || { echo 'patch tag_util failed' >&2; exit 1; }
+        # loadbalance_util: route_ms=false 时跳过容器路由分支, 落回 Consul SRV 分支
+        sed -i "s|if not in_container and string.find(devops_tag, '\^kubernetes-') then|if not in_container and string.find(devops_tag, '^kubernetes-') and config.kubernetes.route_ms then|" /data/workspace/gateway/core/lua/util/loadbalance_util.lua
+        grep -q 'config.kubernetes.route_ms then' /data/workspace/gateway/core/lua/util/loadbalance_util.lua || { echo 'patch loadbalance_util failed' >&2; exit 1; }
+        # nginx 日志目录（BK_CI_LOGS_DIR）需预创建且对 worker(非 root)可写，否则 access log [crit] Permission denied
+        mkdir -p /data/bkhome/logs/ci/nginx && chmod 777 /data/bkhome/logs/ci/nginx
+        # lua require() 对 lua_package_path 中相对路径 'conf/lua/?.lua' 按进程 CWD 解析，
+        # 必须切到 nginx prefix（其 conf 为指向 /data/workspace/gateway/core 的符号链接），
+        # 否则 init_by_lua require('init_common') module not found。
+        cd /usr/local/openresty/nginx
+        exec /usr/local/openresty/nginx/sbin/nginx -g 'daemon off;'
+    volumes:
+      - ./bkenv.properties:/etc/bkci/bkenv.properties:ro
+      - /data/bkci-local/gateway-files:/data/bkce/public/ci/gateway/files:ro
+    depends_on:
+      - consul
+      - dnsmasq
+    logging: *default-logging
+
+  # ---------- 后端微服务（wave A，17 个）----------
+  process:     { <<: *backend, container_name: bkci-process,     command: ["/bin/bash", "/entrypoint.sh", "process"] }
+  engine:
+    <<: *backend
+    container_name: bkci-engine
+    profiles: ["legacy-engine"]
+    command: ["/bin/bash", "/entrypoint.sh", "engine"]
+    volumes:
+      - ./rendered/etc/ci:/etc/bkci/conf:ro
+      - ./entrypoint-service.sh:/entrypoint.sh:ro
+      # 同 store: 发行包 engine slim 目录 lib/ 缺失 common-auth-provider 符号链接, 需补挂载
+      - ./extra-jars/common-auth-provider-1.9.0.jar:/data/workspace/engine/lib/common-auth-provider-1.9.0.jar:ro
+  project:     { <<: *backend, container_name: bkci-project,     command: ["/bin/bash", "/entrypoint.sh", "project"] }
+  repository:  { <<: *backend, container_name: bkci-repository,  command: ["/bin/bash", "/entrypoint.sh", "repository"] }
+  store:
+    <<: *backend
+    container_name: bkci-store
+    command: ["/bin/bash", "/entrypoint.sh", "store"]
+    volumes:
+      - ./rendered/etc/ci:/etc/bkci/conf:ro
+      - ./entrypoint-service.sh:/entrypoint.sh:ro
+      # 发行包 store slim 目录 lib/ 缺失 common-auth-provider 符号链接(quality 等其它服务均有),
+      # 导致 store 无 AuthPlatformApi bean 无法启动. 该 jar 已存在于镜像 jars-private 中, 此处补挂载.
+      - ./extra-jars/common-auth-provider-1.9.0.jar:/data/workspace/store/lib/common-auth-provider-1.9.0.jar:ro
+  ticket:      { <<: *backend, container_name: bkci-ticket,      command: ["/bin/bash", "/entrypoint.sh", "ticket"] }
+  environment: { <<: *backend, container_name: bkci-environment, command: ["/bin/bash", "/entrypoint.sh", "environment"] }
+  dispatch:    { <<: *backend, container_name: bkci-dispatch,    command: ["/bin/bash", "/entrypoint.sh", "dispatch"] }
+  quality:     { <<: *backend, container_name: bkci-quality,     command: ["/bin/bash", "/entrypoint.sh", "quality"] }
+  log:         { <<: *backend, container_name: bkci-log,         command: ["/bin/bash", "/entrypoint.sh", "log"] }
+  notify:      { <<: *backend, container_name: bkci-notify,      command: ["/bin/bash", "/entrypoint.sh", "notify"] }
+  auth:        { <<: *backend, container_name: bkci-auth,        command: ["/bin/bash", "/entrypoint.sh", "auth"] }
+  openapi:     { <<: *backend, container_name: bkci-openapi,     command: ["/bin/bash", "/entrypoint.sh", "openapi"] }
+  websocket:   { <<: *backend, container_name: bkci-websocket,   command: ["/bin/bash", "/entrypoint.sh", "websocket"] }
+  misc:        { <<: *backend, container_name: bkci-misc,        command: ["/bin/bash", "/entrypoint.sh", "misc"] }
+  artifactory: { <<: *backend, container_name: bkci-artifactory, command: ["/bin/bash", "/entrypoint.sh", "artifactory"] }
+  metrics:     { <<: *backend, container_name: bkci-metrics,     command: ["/bin/bash", "/entrypoint.sh", "metrics"] }
+
+  # ---------- 构建资源（wave B，docker build）----------
+  dockerhost:
+    image: bkci-local/bkci-backend:v4.2.0-rc.7
+    container_name: bkci-dockerhost
+    restart: unless-stopped
+    network_mode: host
+    extra_hosts:
+      - "rabbitmq:172.20.4.188"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./rendered/etc/ci:/etc/bkci/conf:ro
+      - ./entrypoint-service.sh:/entrypoint.sh:ro
+      - /data/bkci-local:/data/bkci-local
+    environment:
+      BK_HOME: /data/bkhome
+      DEVOPS_GATEWAY: http://172.20.4.188:8080
+      SPRING_CLOUD_CONSUL_ENABLED: "false"
+      SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: "false"
+      SPRING_CLOUD_CONSUL_DISCOVERY_REGISTER: "false"
+      SPRING_APPLICATION_JSON: '{"spring":{"main":{"allow-bean-definition-overriding":true},"cloud":{"consul":{"enabled":false,"discovery":{"enabled":false,"register":false}}}},"dockerhost":{"localIp":"172.20.4.188","elasticity":{"memReservation":8589934592,"memThreshold":90,"cpuThreshold":90}},"dockerCli":{"hostPathWorkspace":"/data/bkci-local/docker/workspace","hostPathApps":"/data/bkci-local/docker/apps/","hostPathInit":"/data/bkci-local/agent-package/script/init.sh","hostPathSleep":"/data/bkci-local/agent-package/script/sleep.sh","hostPathLogs":"/data/bkci-local/logs/ci/docker","hostPathCommonEnv":"/data/bkci-local/docker/common_env","hostPathProjectShare":"/data/bkci-local/docker/share/project","hostPathMavenRepo":"/data/bkci-local/docker/thirdparty/maven_repo","hostPathNpmPrefix":"/data/bkci-local/docker/thirdparty/npm_prefix","hostPathNpmCache":"/data/bkci-local/docker/thirdparty/npm_cache","hostPathNpmRc":"/data/bkci-local/docker/thirdparty/.npmrc","hostPathCcache":"/data/bkci-local/docker/thirdparty/ccache/","hostPathGradleCache":"/data/bkci-local/docker/thirdparty/gradle_caches","hostPathGolangCache":"/data/bkci-local/docker/thirdparty/go_cache/","hostPathSbtCache":"/data/bkci-local/docker/thirdparty/.ivy2/","hostPathSbt2Cache":"/data/bkci-local/docker/thirdparty/sbt_cache/","hostPathYarnCache":"/data/bkci-local/docker/thirdparty/yarn_cache/","hostPathOverlayfsCache":"/data/bkci-local/docker/overlayfs","hostPathLinkDir":"/data/bkci-local/docker/link","hostPathHosts":"/etc/hosts","shareProjectCodeWhiteList":"none","dockerAgentPath":"/data/bkci-local/agent-package/jar/worker-agent.jar"}}'
+    command: ["/bin/bash", "/entrypoint.sh", "dockerhost"]
+    depends_on:
+      - gateway
+      - dispatch
+    logging: *default-logging
+
+  # ---------- BkRepo（制品库）----------
+  bkci-bkrepo-mongo:
+    image: mongo:4.2
+    container_name: bkci-bkrepo-mongo
+    restart: unless-stopped
+    logging: *default-logging
+    command: ["mongod", "--bind_ip_all"]
+    volumes:
+      - bkrepo-mongo-data:/data/db
+    networks:
+      - bkci
+    healthcheck:
+      test: ["CMD", "mongo", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  bkci-bkrepo-auth:
+    image: dockerproxy.net/bkrepo/bkrepo-auth:3.8.9-rc.2
+    container_name: bkci-bkrepo-auth
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ./bkrepo.env
+    environment:
+      # 让 auth 注册到同一个 consul（bkci-consul）
+      BK_REPO_CONSUL_DNS_HOST: consul
+      BK_REPO_CONSUL_DNS_PORT: "8600"
+      BK_REPO_CONSUL_SERVER_PORT: "8500"
+      BK_REPO_CONSUL_DOMAIN: consul
+      BK_REPO_CONSUL_TAG: devops
+      # service prefix 用于 consul 服务名（bkrepo-*）
+      BK_REPO_SERVICE_PREFIX: bkrepo-
+      SPRING_DATA_MONGODB_URI: mongodb://bkci-bkrepo-mongo:27017/bkrepo
+      SPRING_DATA_MONGODB_HOST: bkci-bkrepo-mongo
+      SPRING_DATA_MONGODB_PORT: "27017"
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/etc/bkrepo/
+      SPRING_CONFIG_NAME: application,auth
+    volumes:
+      - ./bkrepo-logs:/data/workspace/logs
+      - ./bkrepo-etc.rendered/etc/bkrepo/application.yaml:/etc/bkrepo/application.yaml:ro
+      - ./bkrepo-etc.rendered/etc/bkrepo/auth.yaml:/etc/bkrepo/auth.yaml:ro
+    networks:
+      bkci:
+        ipv4_address: 172.28.0.61
+    depends_on:
+      bkci-bkrepo-mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_started
+
+  bkci-bkrepo-repository:
+    image: dockerproxy.net/bkrepo/bkrepo-repository:3.8.9-rc.2
+    container_name: bkci-bkrepo-repository
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ./bkrepo.env
+    environment:
+      BK_REPO_CONSUL_DNS_HOST: consul
+      BK_REPO_CONSUL_DNS_PORT: "8600"
+      BK_REPO_CONSUL_SERVER_PORT: "8500"
+      BK_REPO_CONSUL_DOMAIN: consul
+      BK_REPO_CONSUL_TAG: devops
+      BK_REPO_SERVICE_PREFIX: bkrepo-
+      SPRING_CONFIG_ADDITIONAL_LOCATION: file:/etc/bkrepo/
+      SPRING_CONFIG_NAME: application,repository
+    volumes:
+      - ./bkrepo-logs:/data/workspace/logs
+      - ./bkrepo-etc.rendered/etc/bkrepo/application.yaml:/etc/bkrepo/application.yaml:ro
+      - ./bkrepo-etc.rendered/etc/bkrepo/repository.yaml:/etc/bkrepo/repository.yaml:ro
+    networks:
+      bkci:
+        ipv4_address: 172.28.0.62
+    depends_on:
+      bkci-bkrepo-mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      consul:
+        condition: service_started
+
+  bkci-bkrepo-gateway:
+    image: dockerproxy.net/bkrepo/bkrepo-gateway:3.8.9-rc.2
+    container_name: bkci-bkrepo-gateway
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ./bkrepo.env
+    environment:
+      BK_REPO_CONSUL_DNS_HOST: consul
+      BK_REPO_CONSUL_DNS_PORT: "8600"
+      BK_REPO_CONSUL_SERVER_PORT: "8500"
+      BK_REPO_CONSUL_DOMAIN: consul
+      BK_REPO_CONSUL_TAG: devops
+      BK_REPO_SERVICE_PREFIX: bkrepo-
+      BK_REPO_GATEWAY_DNS_ADDR: 127.0.0.11:53
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        export BK_REPO_HOME=/data/workspace BK_REPO_LOGS_DIR=/data/workspace/logs BK_REPO_PROFILE=dev BK_REPO_SERVICE_PREFIX=bkrepo- INSTALL_PATH=/data/workspace BK_HOME=/data/bkhome
+        mkdir -p $$BK_REPO_LOGS_DIR/nginx && chmod 777 $$BK_REPO_LOGS_DIR/nginx
+        touch repo.env
+        /data/workspace/render_tpl -u -p /data/workspace -m . -e repo.env /data/workspace/templates/gateway* 2>&1 | tail -2
+        /data/workspace/render_tpl -u -p /data/workspace -m . -e repo.env /data/workspace/frontend/ui/frontend#ui#index.html 2>&1 | tail -1
+        /data/workspace/render_tpl -u -p /data/workspace -m . -e repo.env /data/workspace/frontend/ui/frontend#admin#index.html 2>&1 | tail -1
+        /usr/local/openresty/nginx/sbin/nginx -t 2>&1 | tail -5
+        exec /usr/local/openresty/nginx/sbin/nginx -g 'daemon off;'
+    volumes:
+      - ./bkrepo-logs:/data/workspace/logs
+      - ./bkrepo-config-templates/templates/gateway#vhosts#bkrepo.server.conf:/data/workspace/templates/gateway#vhosts#bkrepo.server.conf:ro
+      - ./bkrepo-config-templates/templates/gateway#vhosts#bkrepo.static.server.conf:/data/workspace/templates/gateway#vhosts#bkrepo.static.server.conf:ro
+      - ./bkrepo-config-templates/templates/gateway#vhosts#bkrepo.docker.server.conf:/data/workspace/templates/gateway#vhosts#bkrepo.docker.server.conf:ro
+      - ./bkrepo-config-templates/templates/gateway#vhosts#bkrepo.helm.server.conf:/data/workspace/templates/gateway#vhosts#bkrepo.helm.server.conf:ro
+    networks:
+      bkci:
+        ipv4_address: 172.28.0.63
+        aliases:
+          - bkrepo.local
+    depends_on:
+      bkci-bkrepo-auth:
+        condition: service_started
+      bkci-bkrepo-repository:
+        condition: service_started
+
+
+volumes:
+  mysql-data:
+  consul-data:
+  bkrepo-mongo-data:
+  rabbitmq-data:

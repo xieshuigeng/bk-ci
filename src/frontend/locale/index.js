@@ -3,7 +3,7 @@ import { lang, locale } from 'bk-magic-vue'
 import cookies from 'js-cookie'
 import VueI18n from 'vue-i18n'
 import { createI18n } from 'vue-i18n-bridge'
-const DEFAULT_LOCALE = window.INIT_LOCALE || 'zh-CN'
+const DEFAULT_LOCALE = (window.INIT_LOCALE || 'zh-CN').replace(/_/g, '-')
 const LS_KEY = 'blueking_language'
 const loadedModule = {}
 const localeLabelMap = {
@@ -20,14 +20,17 @@ const localeAliasMap = {
     'zh-CN': 'zh-CN',
     'zh-cn': 'zh-CN',
     'ja-JP': 'ja-JP',
+    'ja-jp': 'ja-JP',
     ja: 'ja-JP',
     zh_CN: 'zh-CN',
+    'zh_cn': 'zh-CN',
     cn: 'zh-CN',
     'en-US': 'en-US',
     'en-us': 'en-US',
     en: 'en-US',
     us: 'en-US',
-    en_US: 'en-US'
+    en_US: 'en-US',
+    'en_us': 'en-US'
 }
 
 const backendLocalEnum = {

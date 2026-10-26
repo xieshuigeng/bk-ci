@@ -1,0 +1,27 @@
+server:
+  port: 25901
+
+auth:
+  realm: devops
+  iam:
+    callbackUser: bk_iam
+    systemId: bk_ci
+    baseUrl: 
+    appCode: bk_ci
+    appSecret: devops
+  devops:
+    envName: dev
+    appId: bkdevops
+    appIdSet: bkdevops,bkrepo,codecc
+    authEnabled: true
+    allowAnonymous: true
+    ciAuthServer: http://gateway:80
+    ciAuthToken: devops
+    enableSuperAdmin: false  
+
+esb:
+  code: bk_ci
+  secret: devops
+  iam:
+    url: 
+

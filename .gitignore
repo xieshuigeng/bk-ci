@@ -68,3 +68,18 @@ openspec/*
 openspec/changes/*
 !openspec/changes/archive/
 !openspec/specs/
+
+# 本地 Docker 部署的运行/密钥/渲染产物
+deploy/local/bkenv.properties
+deploy/local/bkrepo.env
+deploy/local/bkrepo.env.fixed
+deploy/local/rendered/
+deploy/local/bkrepo-logs/
+deploy/local/bkrepo-mongo-data/
+deploy/local/bkrepo/
+deploy/local/bkrepo-conf/
+deploy/local/bkrepo-etc-global/
+deploy/local/bkrepo-etc-global2/
+deploy/local/bkrepo-etc-repo/
+deploy/local/*.rendered/
+deploy/local/bkrepo-consul-services.json
