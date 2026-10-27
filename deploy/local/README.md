@@ -134,7 +134,8 @@ Consul HTTP API（`consul:8500`，由 Docker 嵌入式 DNS 解析 `consul` 主�
 ## 当前状态（精简）
 - 已完成：镜像构建、编排配置、渲染、wave A 全量启动、BkRepo 3.8.9-rc.2 打通建项目、9 个默认插件安装并验证
 - 已完成：`dockerhost` + JDK17 构建镜像端到端验证；build #14 的 stage-1/2/3 全部成功，构建日志可在日志接口读取
-- 待办（需人工）：浏览器 UI 最终走查（建项目→新建流水线→选插件→触发→查看日志）
+- 已完成：UI 走查 3 项待办根因分析（2026-10-27）——「画布"?"」= 当初 API 造数据时**写入侧**编码丢失（库里名字节就是 `3F3F3F`，非前端问题）；「缺图标」= artifactory 静态 logo 未初始化（见排障节，已用 `deploy/local/fix-atom-logos.sh` 修复：9 个插件 + 31 个内置图标经网关校验全部 200，仅 tapd/scm 两个 SaaS 专属图标社区包未附带）；「详情页无返回键」= 前端 bug（`bk-breadcrumb` 的 `#prefix` 与 `back-router` 互斥，返回箭头恒不渲染）；「新建流水线只有模板/导入」= 上游设计（必须选已安装模板）+ 本地模板商店为空 → 立增强提案。详见 `docs/superpowers/plans/2026-10-20-bkci-local-docker-deploy.md`「UI 走查问题清单」
+- 操作提醒：用 API/curl 造含中文的数据前先 `export LC_ALL=C.UTF-8`（或 `PYTHONUTF8=1`）。宿主 charset 为 `ANSI_X3.4-1968` 时，脚本写模型 JSON 会把中文替换成 `?` 落库（前端只如实显示，服务端链路本身无损：JDK17 + `LANG=en_US.UTF-8` + JDBC `characterEncoding=utf8`）
 - 注意：`CodeCCCheckAtom` 来自公开 fork，仅验证安装/默认标记，运行时兼容性未验证
 - 已修复：后端 `/ms/project/api/user/locales/get` 返回 `zh_CN`，控制台启动脚本原样写入
   `window.INIT_LOCALE`，导致按 `zh_CN` 请求 `codelib/zh_CN.json` 等文件 404。现已在
@@ -189,9 +190,33 @@ docker exec bkci-rabbitmq rabbitmqctl list_queues -p bk_ci name messages consume
 
 确认消费者恢复（`consumers=5`、`messages=0`）后，历史日志事件会补消费并写入 ES。
 
+### 原子/分类图标全部裂图（artifactory 静态文件未初始化）
+
+现象：画布与插件卡片大量元素无图标。一条 curl 即可复现（HTTP 500 + `No such file or directory`）:
+
+```bash
+curl -s -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
+  "http://localhost:8080/ms/artifactory/api/user/artifactories/file/download?filePath=%2Ffile%2Fpng%2FmanualTrigger.png&logo=true"
+```
+
+根因：本地 compose 未跑官方安装脚本 `docker-images/core/ci/ci-docker/scripts/bk-ci-setup.sh`，其 `setup_ci_artifactory()` 会把镜像内置 logo 静态文件复制进 artifactory 存储根（`cp -nrv "$BK_CI_SRC_DIR/support-files/file" "$BK_CI_DATA_DIR/artifactory/"`）。另一类是 9 个 zip 直装插件：其元数据 `logoUrl` 指向 `file/$<hash>.<hash>.png`，这些由官方发布流程上传，本地 `/api/op/pipeline/atom/deploy` 不上传图标（包内其实带图，如 `checkout/file/checkout.png`、`run/file/logo.png`）。
+
+修复（幂等脚本，容器/数据卷重建后重跑）:
+
+```bash
+cd deploy/local && ./fix-atom-logos.sh      # ATOMS_DIR 默认 /tmp/opencode/atoms，可用环境变量覆盖
+```
+
+脚本做三件事：复制镜像内置 `support-files/file` 到存储根（层级必须是 `<存储根>/file/png/*.png`，浅一层仍 500）、按元数据 `logoUrl` **双重 URL 解码后**的文件名把包内图片落位、最后逐个经网关校验 HTTP 码。2026-10-27 执行结果：9 个插件 + 31 个内置原子/分类图标全部 200。
+
+残留两点：`codeTapdWebHookTrigger`/`codeScmGitWebHookTrigger` 的 `tapdTrigger.png`、`scmGitTrigger.png` 社区包内并未附带（SaaS 专属），仍 500，表现为这两个触发元素无图标；另外前端 `bk-pipeline/src/Atom.vue:38` 只要 `logoUrl` 非空就用 `<img>` 且无 `@error` 回退到内置 sprite 图标，所以任何一个 500 都直接表现为"无图标"（改进见 `openspec/changes/add-atom-logo-load-fallback/`）。
+
 ## 已知限制
 
 - `http://localhost:8080/` 的 302 Location 为 `http://localhost/console/`（nginx `rewrite ... redirect`
   生成的绝对 URL 不带非标端口），直接访问 `http://localhost:8080/console/` 即可。
 - 已部署 bkrepo（gateway/auth/repository + 独立 mongodb），用于建项目时的制品库初始化。
 - 未部署 codecc/agentless 等可选组件；`CodeCCCheckAtom` 插件由公开 fork 自行构建安装（9 个默认插件均已装），其运行时兼容性未验证。
+- 模板商店为空（`GET /store/api/user/market/template/list` → `count:0`；项目侧 `GET /process/api/user/pipeline/template/v2/<project>/allTemplates`
+  → `2101034 模板不存在`）。而新建流水线页面必须选中一个已安装模板才可提交（`CreatePipeline.vue:368-369`），故 UI 上只能"导入"；空白新建请用 API：
+  `POST /process/api/user/pipelines/{projectId}`（body 为流水线 `Model`）。

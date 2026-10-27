@@ -1192,3 +1192,88 @@ git push mine master
 
 **当前状态一句话总结**
 **部署、BkRepo、9 个默认插件、RabbitMQ 事件链路、JDK17 构建镜像与 stage-1/2/3 均已打通；build #14 成功且日志可查。剩余仅为浏览器人工 UI 走查与用户确认后的 Git 提交。**
+
+### 2026-10-26 续：UI 走查问题清单（2026-10-27 已完成根因分析）
+
+浏览器人工走查（Task 13.3）发现以下 3 项。根因分析不以"看代码猜"方式做，逐项建了**可重跑的命令级回路**（curl / SQL 字节核对 / 容器内文件核对，并把部署产物与源码双向核对），结论如下。
+
+#### 1) 画布"?"占位与缺图标 —— 实为两个独立根因
+
+**1a "?"：定编码问题，但坏在写入侧（非产品 bug、非前端渲染 bug）**
+
+- 数据侧证据：库里模型的名字字节本身就是 ASCII `3F3F3F`，即存的真是 `???`，不是前端占位符：
+  ```bash
+  docker exec bkci-mysql mysql -ubk_ci -pbk_ci123 -N -r -e \
+    "select hex(substring(MODEL, locate('@type\":\"trigger', MODEL), 80)) \
+     from devops_ci_process.T_PIPELINE_RESOURCE_VERSION \
+     where PIPELINE_ID='p-17fdae4c01774adaa693dc36c3872352' limit 1;"
+  # → ...226E616D65223A22**3F3F3F**22...   ("name":"???")
+  ```
+  前端 `src/frontend/bk-pipeline/src/Atom.vue:39-45` 只是原样渲染 `atomDisplayName`；无"?"占位逻辑（全仓 `bk-pipeline`/`AtomSelector` grep `'?'` 无命中）。初判"不是编码问题"**被推翻**：是编码问题，只是发生在写入。
+- 写入侧证据（对照回路）：用**同一 API**、UTF-8 body 新建一条探针流水线，库里写入的是正确 UTF-8、API 回显也正常 → 服务端与 JDBC 链路无损（`process` 容器 JDK17 + `LANG=en_US.UTF-8`；JDBC `characterEncoding=utf8`）：
+  ```bash
+  # 模型文件必须是 UTF-8（od -tx1 核对首字段应为 e7 bc 96 ...，不是 3f）
+  curl -s -X POST -H 'Content-Type: application/json; charset=utf-8' \
+    -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
+    --data-binary @model.json \
+    "http://localhost:8080/process/api/user/pipelines/demotest"   # → {"status":0,"data":{"id":"p-..."}}
+  # 清理：curl -s -X DELETE ... "http://localhost:8080/process/api/user/pipelines/demotest/<id>/"
+  ```
+  → 当初的 `???` 来自生成/发送模型 JSON 那一步：在 `LANG`/`CHARSET`=C（本机会输出 `ANSI_X3.4-1968`）下按 ASCII 写文件，中文被替换成 `?`。属**本机操作/环境**。
+- 处置：① 用 API 重写 `complex-demo-pipeline` 各容器/元素名（待办）；② 操作前置 `export LC_ALL=C.UTF-8`（或 `PYTHONUTF8=1`），已写入 README 排障节。探针流水线 `p-506e2111a4f14c4a99c1440b9783bd4a` 已软删除。
+
+**1b 缺图标：定环境/部署问题（artifactory 静态 logo 未初始化）+ 一个前端容错缺口**
+
+- 复现回路（一条 curl 即红）：store 里每个 atom 的 `logoUrl` 全部 500：
+  ```bash
+  curl -s -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
+    "http://localhost:8080/ms/artifactory/api/user/artifactories/file/download?filePath=%2Ffile%2Fpng%2FmanualTrigger.png&logo=true"
+  # HTTP 500: {"status":500,"message":"<archiveLocalBasePath>/file/png/manualTrigger.png (No such file or directory)"}
+  ```
+- 根因：官方镜像安装脚本会把内置 logo 复制进 artifactory 存储根（`docker-images/core/ci/ci-docker/scripts/bk-ci-setup.sh:216`：`cp -nrv "$BK_CI_SRC_DIR/support-files/file" "$BK_CI_DATA_DIR/artifactory/"`），本地 compose 未跑 `bk-ci-setup.sh`，故存储根 `.../ci/artifactory/file/` 下只有 1 个文件（`CodeCCCheckAtom` 的 `$abeeac….png`），既无 `file/png/*.png`（镜像内已有：`/data/workspace/support-files/file/png/`），8 个插件包内 logo 也未上传（上传逻辑见 `StoreLogoServiceImpl.uploadStoreLogo`）。
+- 前端侧放大原因：`Atom.vue:38` 对 `logoUrl` 非空即无条件渲染 `<img>`，无 `@error` 回退到 sprite 图标（`:39` 的 `Logo v-else` 只在 `logoUrl` 为空时才走到），所以 500 直接表现为"无图标"。→ **归环境**（已修复）；前端 `@error` 回退另立增强提案。
+- 处置（已落地 2026-10-27）：新增 `deploy/local/fix-atom-logos.sh`（幂等；复制镜像内置 `support-files/file`，并把 9 个 zip 直装插件包内图片按 `logoUrl` 双重 URL 解码后的文件名落位），执行后经网关校验 9 个插件 + 31 个内置原子/分类图标全部 `200`。残留：`tapdTrigger.png`、`scmGitTrigger.png` 社区包未附带（SaaS 专属），仍 500。增强提案 `openspec/changes/add-atom-logo-load-fallback/`。
+
+#### 2) 构建详情页无返回按钮 —— 定为**产品 bug（前端）**
+
+- 跳转方式已确认：执行历史点构建号是同页 `this.$router.push`（`src/frontend/devops-pipeline/src/components/BuildHistoryTable/index.vue:1262-1291` 的 `getArchiveUrl` → 路由 `pipelinesDetail`），不是新开标签，所以浏览器返回可用，缺的是页内入口。
+- 根因（组件层"死参"）：详情页头 `components/PipelineHeader/DetailHeader.vue:6-10` 只渲染 `pipeline-bread-crumb`；`components/PipelineHeader/PipelineBreadCrumb.vue:3-13` **同时**传 `:back-router="manageRoute"` 与 `#prefix` 插槽。而 `bk-magic-vue` 的 `bk-breadcrumb` 渲染函数（已核对与部署产物 `frontend/pipeline/bk-magic-vue-chunk.*.min.js` 一致）二者互斥：
+  ```js
+  !$slots.prefix && backRouter ? h('div',{class:'bk-breadcrumb-goback'},
+       [h('i',{class:'bk-icon icon-arrows-left', on:{click: goBack}})]) : _e(),
+  $slots.prefix ? h('div',{class:'bk-breadcrumb-goback'},[_t('prefix')]) : _e()
+  ```
+  即只要用了 `#prefix`（本项目恒用，放流水线 Logo 图标），返回箭头永不渲染，`back-router` 成死参。
+- 对照：编辑页/预览页各自有显式返回（`PipelineHeader/EditHeader.vue:475`、`PreviewHeader.vue:216` 的 `this.$router.back()`），只有执行详情页两者皆无 → 非"设计如此"。
+- 修复建议：`PipelineBreadCrumb.vue` 去掉 `#prefix` 与 `back-router` 的并用（例如把 Logo 移入首个 `bk-breadcrumb-item`，保留返回箭头），或在 `DetailHeader` 增显式返回键。复现：项目 → 流水线 → 执行历史 → 点构建号 → 页内无任何返回入口（仅面包屑一层可点）。
+
+#### 3) 新建流水线只有"模板新建/导入" —— 定为**上游设计如此 + 本地无模板源**，归**增强需求**
+
+- 代码侧：`src/frontend/devops-pipeline/src/views/CreatePipeline.vue:368-369` → `isConfirmDisable = isDisabled || !activeTemp?.installed || isActiveTempEmpty`，即**必须选中一个已安装模板**才能创建；页面上本就没有独立"空白新建"入口，模板只有两个面板：项目自定义 / 模板商店（`:336-340`, `:382-399`）。
+- 数据侧（本地部署两面板皆空，故创建按钮恒禁用）：
+  ```bash
+  curl -s -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
+    "http://localhost:8080/process/api/user/pipeline/template/v2/demotest/allTemplates"
+  # → {"status":2101034,"message":"流水线: 模板不存在"}
+  curl -s -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
+    "http://localhost:8080/store/api/user/market/template/list?page=1&pageSize=20"
+  # → {"status":0,"data":{"count":0,...,"records":[]}}
+  ```
+- 旁证修正：`src/frontend/locale/flow/zh-CN.json:99,116,228` 的"从空白开始，或从模板创建/空白模板"属 `flow.content.*`（创作流产品），全 `src/frontend` **无一处引用**、部署包 `frontend/pipeline|console` 内也不存在该串 → 不能当作 CI 控制台空白入口的证据。
+- 能力对照：服务端本来就支持空白创建（`POST /process/api/user/pipelines/{projectId}` 直接收 `Model`，本次 1a 回路已用它建过流水线）→ 缺的只是 UI 入口。→ **已立增强提案** `openspec/changes/add-blank-pipeline-creation-entry/`；模板商店为空已记入 README 已知限制。
+
+**记录位置约定（本清单及后续待办沿用）**：
+- 部署/链路进展 → 本文按日期续节；精简状态同步 `deploy/local/README.md`「当前状态」。
+- UI 走查待办 → 本节问题清单（分析中条目带 `待定位/待查` 与初判）。
+- 根因确定后分流：**环境/部署问题** → 直接修复并写入 README 排障节；**产品 bug** → 本节改记 `bug` 并附复现步骤，视需要向上游提 issue；**产品增强** → 走 `openspec/changes/` 流程立变更提案。
+
+### 2026-10-27 续：三项根因的分流处置已落地
+
+| 项 | 定性 | 处置 | 状态 |
+|---|---|---|---|
+| 1a 画布"?" | 写入侧编码（本机操作） | README 增"操作前置 `LC_ALL=C.UTF-8`"提醒；验证回路已在本文 `:1a` 记录 | 已记录 |
+| 1b 缺图标 | 环境/部署 | 新增并执行 `deploy/local/fix-atom-logos.sh`，README 排障节交叉引用 | 已修复并校验（残留 2 个 SaaS 专属图标） |
+| 2 详情页无返回 | 产品 bug（前端） | 本节已改记 bug + 复现步骤 + 修复建议 | 待：向上游提 issue（未获指示）、待前端修复 |
+| 3 无空白新建入口 | 产品增强（上游设计 + 本地无模板源） | `openspec/changes/add-blank-pipeline-creation-entry/`、`openspec/changes/add-atom-logo-load-fallback/` | 提案已立（未实施） |
+
+后续待办：① 用 API 重写 `complex-demo-pipeline` 的容器/元素名（现仍为 `???`，属数据修复）；② UI 重走查确认图标恢复与新建/编排路径可用；③ 问题 2 的是否提上游 issue 由用户决定。探针流水线 `p-506e2111a4f14c4a99c1440b9783bd4a` 已软删除（主表 `T_PIPELINE_INFO` 已无记录，仅版本快照留档）。
