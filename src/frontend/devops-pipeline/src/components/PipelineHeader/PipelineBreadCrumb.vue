@@ -3,9 +3,12 @@
         <bk-breadcrumb
             class="pipeline-bread-crumb"
             separator-class="devops-icon icon-angle-right"
-            :back-router="manageRoute"
+            :back-router="showBack ? (backRoute || manageRoute) : null"
         >
-            <template #prefix>
+            <template
+                v-if="!showBack"
+                #prefix
+            >
                 <Logo
                     :size="16"
                     class="icon-pipeline"
@@ -54,6 +57,11 @@
         props: {
             showRecordEntry: Boolean,
             showBuildNumSwitch: Boolean,
+            // bk-breadcrumb 的 back-router 与 prefix 插槽互斥（prefix 存在时不渲染返回箭头），
+            // 故需要返回入口的页面显式打开 showBack：此时用箭头替换前缀的流水线图标
+            showBack: Boolean,
+            // 返回箭头目标覆写（缺省回流水线列表页）；如执行详情页覆写为本流水线的执行历史页
+            backRoute: Object,
             pipelineName: String,
             isLoading: Boolean,
             showPacTag: {

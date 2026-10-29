@@ -6,6 +6,8 @@
         <pipeline-bread-crumb
             :show-record-entry="isDebugExec"
             show-build-num-switch
+            show-back
+            :back-route="historyRoute"
             :pipeline-name="pipelineInfo?.pipelineName"
         />
         <aside
@@ -303,6 +305,13 @@
             },
             pipelineId () {
                 return this.$route.params.pipelineId
+            },
+            historyRoute () {
+                const { projectId, pipelineId } = this.$route.params
+                return {
+                    name: 'pipelinesHistory',
+                    params: { projectId, pipelineId }
+                }
             },
             canEdit () {
                 return this.pipelineInfo?.permissions?.canEdit ?? true
