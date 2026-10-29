@@ -1277,3 +1277,26 @@ git push mine master
 | 3 无空白新建入口 | 产品增强（上游设计 + 本地无模板源） | `openspec/changes/add-blank-pipeline-creation-entry/`、`openspec/changes/add-atom-logo-load-fallback/` | 提案已立（未实施） |
 
 后续待办：① 用 API 重写 `complex-demo-pipeline` 的容器/元素名（现仍为 `???`，属数据修复）；② UI 重走查确认图标恢复与新建/编排路径可用；③ 问题 2 的是否提上游 issue 由用户决定。探针流水线 `p-506e2111a4f14c4a99c1440b9783bd4a` 已软删除（主表 `T_PIPELINE_INFO` 已无记录，仅版本快照留档）。
+
+### 2026-10-27 续二：数据改名落地、charset 误判更正、返回键源码修复
+
+**① `complex-demo-pipeline` 名字已修**：取模型 → 按 id 改 12 处名字 → 以 UTF-8 走 `PUT /process/api/user/pipelines/{projectId}/{pipelineId}/`（`UserPipelineResource.kt:198-214`）回写 → 库中版本 2 的名字节为 UTF-8（`E8A7A6E58F91E599A8` = 触发器），API 回显阶段/容器/任务名全部正确。触发构建 **#15（version=2）STATUS=0 成功**，说明改名未破坏执行链。
+
+**② 一次误判与更正（重要，避免后人重踩）**：改名后我看到新构建 `T_PIPELINE_BUILD_TASK.TASK_NAME` 仍是 `?? A`，据而判"服务端写坏"。用 `hex(substring(TASK_NAME,1,4))` 复核后更正：库里一直是正确 UTF-8（`E69E84E5BBBA2041` = `构建 A`），`?` 是 **mysql 客户端缺 `--default-character-set=utf8mb4` 的输出转码**，与修复前的 #15 逐行相同。教训：判断编码是否被写坏只看字节（`hex`），不要看 mysql 表格输出。
+
+不过顺带查实了一个**真实隐患**（非本次故障）：后端容器 `LANG=en_US.UTF-8` 指向镜像内不存在的 locale（只有 `C.utf8`），JVM `file.encoding/native.encoding` 因此为 `ANSI_X3.4-1968`。已在 `docker-compose.yml` 的 `x-backend.environment` 统一改 `LANG=LC_ALL=C.UTF-8`，重建 `process` 后 `java -XshowSettings` 两项均为 `UTF-8`，构建 #16 正常。其余服务在各自下次重建/重启时生效。
+
+**③ 详情页返回键（问题 2）源码已修**：`bk-breadcrumb` 的 `goBack` 实现为 `this.$router.push(backRouter)`（部署产物 `bk-magic-vue-chunk.*.min.js` 内可查），即"返回流水线列表"，不依赖浏览器历史。改动：
+
+- `src/frontend/devops-pipeline/src/components/PipelineHeader/PipelineBreadCrumb.vue`：新增 `showBack` Prop；`showBack` 时把 `back-router` 传给 `bk-breadcrumb` 并**不再注册 `#prefix` 插槽**（二者互斥，prefix 存在时返回箭头恒不渲染），用小三角返回箭头替换原流水线小图标。
+- `.../DetailHeader.vue:6-10`：执行详情页传 `show-back`。仅详情页开启，其余页头行为不变。
+
+验证状态：**未做浏览器验证**——本仓前端镜像是从 release 包 `bkci-docker.tar.gz` 的 `frontend/` 产物 `COPY`（`docker-images/core/ci/dockerfile/frontend.Dockerfile` + `0.get_release.sh`），不是从 `src/frontend` 编译；本机又无 `pnpm` 与 `src/frontend/node_modules`（node v22、registry 可达）。进镜像需先补前端编译链路，见下一步。
+
+### 2026-10-29 返回箭头修复：浏览器验证已补做并通过
+
+前端编译链路实测**本机即可**（`src/frontend/devops-pipeline` 目录内 `npm run dev` 即可，workspace 链接包在 `node_modules` 下已就绪，webpack 5.76.3 全量编译 ~56s，无 pnpm 亦通）。验证拓扑：dev server `:8006`（从修改后源码编译）+ 反代 `:8088`（`/pipeline/*`→8006，其余→8080，脚本 `/tmp/opencode/pipeline-dev-proxy.js`），防火墙 `sudo ufw allow 8088/tcp`，浏览器经 `http://172.20.4.188:8088/console/` 访问。
+
+结果：执行详情页箭头出现；**轮 1 箭头目标是流水线列表页，用户指正应为构建列表（执行历史页）**——修订为新增 `backRoute` prop（缺省回列表），`DetailHeader` 传 `pipelinesHistory`；轮 2 复验通过：箭头落 `.../history/history`，面包屑「流水线」项仍回列表，编排/执行记录/预览页维持 logo 无箭头。eslint 两文件 exit=0。spec/plan：`docs/superpowers/specs/2026-10-29-pipeline-breadcrumb-back-arrow-design.md`、`docs/superpowers/plans/2026-10-29-pipeline-breadcrumb-back-arrow.md`。
+
+提醒：`npm run dev` 会把产物写到 `src/frontend/frontend/pipeline/`（gitignore，与 prod 构建同目录混放，已见 `frontend#pipeline#index.html` 等 prod 命名件共存）；镜像链路不消费该目录（走 release 包），无影响，但不要将该目录内容直接当 release 产物使用。HMR websocket 固定 `127.0.0.1:8006`，跨机访问改码后需手动强刷。
