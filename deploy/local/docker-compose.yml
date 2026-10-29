@@ -24,6 +24,13 @@ x-backend: &backend
     SPRING_APPLICATION_JSON: '{"spring":{"cloud":{"consul":{"discovery":{"prefer-ip-address":true,"register-health-check":false}}}}}'
     DEVOPS_GATEWAY: http://localhost:8080
     BK_HOME: /data/bkhome
+    # 镜像 ENV LANG=en_US.UTF-8，但该 locale 在镜像内不存在（`locale -a` 只有 C.utf8），
+    # 于是 JVM 退回 file.encoding/native.encoding=ANSI_X3.4-1968（java -XshowSettings 可见）；
+    # 换成镜像内真实存在的 C.UTF-8 后两项均为 UTF-8。属防御性加固：凡走 JVM 默认字符集的路径都会把
+    # 中文降级成 "?"。本部署已实测未见实际损坏（模型与 TASK_NAME 均为正确 UTF-8），
+    # 排查时注意 mysql 客户端不带 --default-character-set=utf8mb4 会把 UTF-8 中文**显示**成 "?"。
+    LANG: C.UTF-8
+    LC_ALL: C.UTF-8
     DISPATCH_WORKERFILE: /data/workspace/agent-package/jar/worker-agent.jar
     DISPATCH_DOCKERFILE: /data/workspace/agent-package/jar/worker-agent.jar
     DISPATCH_SCRIPTS: /data/workspace/agent-package/script

@@ -211,6 +211,16 @@ cd deploy/local && ./fix-atom-logos.sh      # ATOMS_DIR 默认 /tmp/opencode/ato
 
 残留两点：`codeTapdWebHookTrigger`/`codeScmGitWebHookTrigger` 的 `tapdTrigger.png`、`scmGitTrigger.png` 社区包内并未附带（SaaS 专属），仍 500，表现为这两个触发元素无图标；另外前端 `bk-pipeline/src/Atom.vue:38` 只要 `logoUrl` 非空就用 `<img>` 且无 `@error` 回退到内置 sprite 图标，所以任何一个 500 都直接表现为"无图标"（改进见 `openspec/changes/add-atom-logo-load-fallback/`）。
 
+### JVM 默认字符集是 ASCII（镜像内 LANG 指向不存在的 locale）
+
+镜像 ENV `LANG=en_US.UTF-8`，但镜像内只装了 `C.utf8`（`locale -a` 可见），于是 JVM 退回
+`file.encoding = native.encoding = ANSI_X3.4-1968`（`docker exec bkci-process java -XshowSettings -version | grep encoding` 可见）。
+凡走 JVM 默认字符集的路径都会把中文降级为 `?`，属潜在隐患；已在 `docker-compose.yml` 的 `x-backend.environment`
+统一改为 `LANG/LC_ALL=C.UTF-8`（改后两项均为 `UTF-8`，已重建 `process` 验证，构建 #16 正常）。
+
+排查提醒：`mysql` 客户端不带 `--default-character-set=utf8mb4` 时会把库中**正确的** UTF-8 中文**显示**成 `?`；
+判断是否真被写坏必须看字节，例如 `select hex(substring(TASK_NAME,1,4))`（UTF-8 中文形如 `E69E84`，真写坏则是 `3F`）。
+
 ## 已知限制
 
 - `http://localhost:8080/` 的 302 Location 为 `http://localhost/console/`（nginx `rewrite ... redirect`
