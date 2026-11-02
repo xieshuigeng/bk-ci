@@ -32,7 +32,7 @@
                             ></span>
                         </div>
                     </bk-form-item>
-                    <template v-if="!isActiveTempEmpty">
+                    <template v-if="!isActiveTempEmpty && !isBlankMode">
                         <bk-form-item :label="$t('type')">
                             <bk-radio-group
                                 class="pipelinte-template-type-group"
@@ -93,21 +93,23 @@
                             </bk-checkbox-group>
                         </bk-form-item>
                     </template>
-                    <bk-form-item>
-                        <pipeline-label-selector
-                            :value.sync="labelValues"
-                            :disabled="isConstrainMode"
-                        />
-                    </bk-form-item>
-                    <bk-form-item ext-cls="namingConvention">
-                        <syntax-style-configuration
-                            :disabled="isConstrainMode"
-                            :inherited-dialect="inheritedDialect"
-                            :pipeline-dialect="pipelineDialect"
-                            @inherited-change="inheritedChange"
-                            @pipeline-dialect-change="pipelineDialectChange"
-                        />
-                    </bk-form-item>
+                    <template v-if="!isBlankMode">
+                        <bk-form-item>
+                            <pipeline-label-selector
+                                :value.sync="labelValues"
+                                :disabled="isConstrainMode"
+                            />
+                        </bk-form-item>
+                        <bk-form-item ext-cls="namingConvention">
+                            <syntax-style-configuration
+                                :disabled="isConstrainMode"
+                                :inherited-dialect="inheritedDialect"
+                                :pipeline-dialect="pipelineDialect"
+                                @inherited-change="inheritedChange"
+                                @pipeline-dialect-change="pipelineDialectChange"
+                            />
+                        </bk-form-item>
+                    </template>
                 </bk-form>
                 <footer style="margin-top: 24px;">
                     <bk-button
@@ -124,7 +126,10 @@
                     </bk-button>
                 </footer>
             </aside>
-            <div class="pipeline-template-box-right-side">
+            <div
+                class="pipeline-template-box-right-side"
+                v-if="!isBlankMode"
+            >
                 <bk-tab
                     :active.sync="activePanel"
                     @tab-change="handleTemplateTypeChange"
@@ -168,15 +173,11 @@
                             <i class="bk-icon icon-check-1"></i>
                         </span>
                         <p class="pipeline-template-logo">
-                            <img
-                                :src="temp.logoUrl"
-                                v-if="temp.logoUrl"
-                            >
-                            <logo
-                                size="50"
+                            <AtomLogo
+                                :logo-url="temp.logoUrl"
                                 :name="temp.icon || 'placeholder'"
-                                v-else
-                            ></logo>
+                                size="50"
+                            />
                         </p>
                         <div class="pipeline-template-detail">
                             <p
@@ -228,6 +229,28 @@
                     </li>
                 </ul>
             </div>
+            <div
+                class="create-pipeline-blank-guide"
+                v-else
+            >
+                <p
+                    class="blank-guide-desc"
+                    v-if="!hasUsableTemplate"
+                >
+                    {{ $t('noTemplateAvailableDesc') }}
+                </p>
+                <p class="blank-guide-tip">{{ $t('blankCreateGuide') }}</p>
+                <div class="blank-guide-actions">
+                    <bk-button
+                        theme="primary"
+                        :disabled="isConfirmDisable"
+                        @click="createNewPipeline"
+                    >
+                        {{ $t('newPipelineFromBlankLabel') }}
+                    </bk-button>
+                    <bk-button @click="goImport">{{ $t('newPipelineFromJSONLabel') }}</bk-button>
+                </div>
+            </div>
         </div>
         <pipeline-template-preview
             v-model="isShowPreview"
@@ -244,6 +267,7 @@
     import PipelineTemplatePreview from '@/components/PipelineTemplatePreview'
     import pipelineHeader from '@/components/devops/pipeline-header'
     import SyntaxStyleConfiguration from '@/components/syntaxStyleConfiguration'
+    import { AtomLogo } from 'bkui-pipeline/vue2'
     import { RESOURCE_TYPE, TEMPLATE_RESOURCE_ACTION } from '@/utils/permission'
     import { templateTypeEnum } from '@/utils/pipelineConst'
     import { getCacheViewId } from '@/utils/util'
@@ -254,6 +278,7 @@
             pipelineHeader,
             PipelineTemplatePreview,
             Logo,
+            AtomLogo,
             SyntaxStyleConfiguration,
             AlertTips,
             PipelineLabelSelector
@@ -263,6 +288,8 @@
                 TEMPLATE_RESOURCE_ACTION,
                 RESOURCE_TYPE,
                 activePanel: 'projected',
+                blankMode: this.$route.query.blank === '1',
+                storeTemplateChecked: false,
                 isDisabled: false,
                 activeTempIndex: 0,
                 applySettings: [],
@@ -365,7 +392,16 @@
             isActiveTempEmpty () {
                 return !this.activeTemp
             },
+            hasUsableTemplate () {
+                return this.projectedTemplateList.length > 0 || this.storeTemplateNum > 0 || this.storeTemplate.length > 0
+            },
+            isBlankMode () {
+                return this.blankMode || (!this.hasUsableTemplate && this.storeTemplateChecked)
+            },
             isConfirmDisable () {
+                if (this.isBlankMode) {
+                    return this.isDisabled || !this.newPipelineName
+                }
                 return this.isDisabled || !this.activeTemp?.installed || this.isActiveTempEmpty
             },
             projectedTemplateList () {
@@ -426,9 +462,13 @@
             await this.$store.dispatch('requestProjectDetail', {
                 projectId: this.$route.params.projectId
             })
-            this.requestPipelineTemplate({
+            await this.requestPipelineTemplate({
                 projectId: this.$route.params.projectId
             })
+            // 项目模板为空时拉取商店模板首页，以确认空态（空白创建判定）
+            if (!this.projectedTemplateList.length && !this.blankMode) {
+                this.requestMarkTemplates()
+            }
         },
         mounted () {
             this.$nextTick(() => {
@@ -443,10 +483,18 @@
             ...mapActions('pipelines', [
                 'installPipelineTemplate',
                 'createPipelineWithTemplate',
+                'createBlankPipeline',
                 'requestTemplateSetting'
             ]),
             goList () {
                 this.$router.push(this.pipelineListRoute)
+            },
+            goImport () {
+                this.$router.push({
+                    name: 'PipelineManageList',
+                    params: this.pipelineListRoute.params,
+                    query: { import: '1' }
+                })
             },
             handleTemplateTypeChange (panel) {
                 if (panel === 'store') {
@@ -486,6 +534,7 @@
                     this.loadEnd = data.count <= this.storeTemplate.length
                 }).catch(err => this.$bkMessage({ message: (err.message || err), theme: 'error' })).finally(() => {
                     this.isLoadingMore = false
+                    this.storeTemplateChecked = true
                 })
             },
             async install (temp, index) {
@@ -552,6 +601,31 @@
                     if (!this.newPipelineName) {
                         this.$showTips({ message: this.$t('pipelineNameTips'), theme: 'error' })
                         return false
+                    }
+
+                    if (this.isBlankMode) {
+                        this.isDisabled = true
+                        const blankResult = await this.createBlankPipeline({
+                            projectId: this.$route.params.projectId,
+                            pipelineName: this.newPipelineName
+                        })
+                        const pipelineId = blankResult?.id
+                        if (pipelineId) {
+                            this.$showTips({ message: this.$t('createPipelineSuc'), theme: 'success' })
+                            this.$router.push({
+                                name: 'pipelinesEdit',
+                                params: {
+                                    ...this.$route.params,
+                                    pipelineId
+                                }
+                            })
+                        } else {
+                            this.$showTips({
+                                message: this.$t('addFail'),
+                                theme: 'error'
+                            })
+                        }
+                        return
                     }
 
                     if (this.isActiveTempEmpty) {
@@ -748,6 +822,30 @@
             }
             .pipeline-template-box-right-side-footer {
                 margin-top: 20px;
+            }
+        }
+        .create-pipeline-blank-guide {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            background: white;
+            box-shadow: 0 2px 2px 0 #00000026;
+            .blank-guide-desc {
+                font-size: 14px;
+                color: #313238;
+            }
+            .blank-guide-tip {
+                margin-top: 8px;
+                font-size: 12px;
+                color: #979ba5;
+            }
+            .blank-guide-actions {
+                margin-top: 24px;
+                display: flex;
+                gap: 8px;
             }
         }
         &-right-side {

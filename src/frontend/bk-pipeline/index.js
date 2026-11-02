@@ -32,3 +32,4 @@ BkPipeline.install = install
 
 export default BkPipeline
 export { loadI18nMessages, useLang }
+export { default as AtomLogo } from "./src/AtomLogo.vue"

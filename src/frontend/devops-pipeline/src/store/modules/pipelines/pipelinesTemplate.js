@@ -117,6 +117,31 @@ const actions = {
             return response.data
         })
     },
+    // 无模板时空白创建流水线：body 为最小 Model（名称 + 一个含手动触发容器的空阶段）
+    createBlankPipeline (_, { projectId, pipelineName }) {
+        const model = {
+            name: pipelineName,
+            desc: '',
+            stages: [{
+                id: 'stage-1',
+                containers: [{
+                    '@type': 'trigger',
+                    id: '0',
+                    name: 'trigger',
+                    elements: [{
+                        '@type': 'manualTrigger',
+                        id: 'T-1-1-1',
+                        additionalOptions: {
+                            enable: true
+                        }
+                    }]
+                }]
+            }]
+        }
+        return ajax.post(`${prefix}/pipelines/${projectId}?useTemplateSettings=false`, model).then(response => {
+            return response.data
+        })
+    },
     requestTemplatePreview (_, { projectId, templateId, ...params }) {
         return ajax.get(`${prefix}/templates/projects/${projectId}/templates/${templateId}/preview`, {
             params

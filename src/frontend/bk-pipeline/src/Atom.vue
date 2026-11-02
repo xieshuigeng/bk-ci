@@ -35,8 +35,7 @@
         :name="`sub_pipeline_${atom.asyncStatus.toLowerCase()}`" />
       <status-icon v-else-if="!isSkip && !!atomStatus" type="element" :status="atomStatus" :is-hook="isHookAtom" />
 
-      <img v-else-if="atom.logoUrl" :src="atom.logoUrl" :class="logoCls" />
-      <Logo v-else :class="logoCls" :name="svgAtomIcon" size="18" />
+      <AtomLogo v-else :class="logoCls" :logo-url="atom.logoUrl" :name="svgAtomIcon" size="18" />
       <p class="atom-name">
         <span
           :title="atomDisplayName"
@@ -142,6 +141,7 @@
 <script setup>
 import { ref, computed, inject, watch, onMounted, onBeforeUnmount } from "vue";
 import HoverSlideBtn from "./HoverSlideBtn";
+import AtomLogo from "./AtomLogo";
 import Logo from "./Logo";
 import StatusIcon from "./StatusIcon";
 import {

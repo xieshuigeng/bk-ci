@@ -314,6 +314,14 @@
                         })
                     }
                 }, {
+                    text: this.$t('newPipelineFromBlankLabel'),
+                    action: () => {
+                        this.$router.push({
+                            name: 'createPipeline',
+                            query: { blank: '1' }
+                        })
+                    }
+                }, {
                     text: this.$t('newPipelineFromJSONLabel'),
                     action: this.toggleImportPipelinePopup
                 }],
@@ -432,6 +440,16 @@
             bus.$on(ADD_TO_PIPELINE_GROUP, this.handleAddToGroup)
             this.updateTableHeight()
             window.addEventListener('resize', this.updateTableHeight)
+            if (this.$route.query.import === '1') {
+                this.importPipelinePopupShow = true
+                const query = { ...this.$route.query }
+                delete query.import
+                this.$router.replace({
+                    name: 'PipelineManageList',
+                    params: this.$route.params,
+                    query
+                })
+            }
         },
 
         beforeDestroy () {

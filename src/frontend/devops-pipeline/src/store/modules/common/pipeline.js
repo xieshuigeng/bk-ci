@@ -158,6 +158,8 @@ export const mutations = {
     }
 }
 
+const TEMPLATE_NOT_EXIST = 2101034
+
 export const actions = {
 
     // 获取模板的所有范畴
@@ -193,6 +195,12 @@ export const actions = {
                 pipelineTemplateMap
             })
         } catch (e) {
+            if (e.code === TEMPLATE_NOT_EXIST) { // 模板不存在：归一为空态，不弹错误提示
+                commit(PIPELINE_TEMPLATE_MUTATION, {
+                    pipelineTemplateMap: new Map()
+                })
+                return
+            }
             rootCommit(commit, FETCH_ERROR, e)
         }
     },

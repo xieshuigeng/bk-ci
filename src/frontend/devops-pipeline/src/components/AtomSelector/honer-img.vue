@@ -1,10 +1,12 @@
 <template>
     <section class="honer-img">
         <section class="img-wrapper">
-            <img
+            <AtomLogo
                 class="img-self"
-                :src="detail.logoUrl"
+                :logo-url="detail.logoUrl"
+                :name="detail.atomCode"
             >
+            </AtomLogo>
             <template v-if="recentHoner">
                 <img
                     class="honer-self"
@@ -24,7 +26,10 @@
 </template>
 
 <script>
+    import { AtomLogo } from 'bkui-pipeline/vue2'
+
     export default {
+        components: { AtomLogo },
         props: {
             detail: Object,
             isBig: Boolean

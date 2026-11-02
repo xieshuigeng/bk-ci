@@ -6,10 +6,12 @@
         v-bk-tooltips="toolTip"
     >
         <section class="card-info">
-            <img
-                :src="card.logoUrl"
+            <AtomLogo
+                :logo-url="card.logoUrl"
+                name="placeholder"
                 class="info-pic"
             >
+            </AtomLogo>
             <p class="info-main">
                 <span class="main-name">
                     <span
@@ -108,11 +110,13 @@
 
 <script>
     import logo from '@/components/Logo'
+    import { AtomLogo } from 'bkui-pipeline/vue2'
     import { convertTime } from '@/utils/util.js'
 
     export default {
         components: {
-            logo
+            logo,
+            AtomLogo
         },
 
         props: {

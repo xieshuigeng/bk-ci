@@ -37,14 +37,9 @@
                             width="80"
                         >
                             <template slot-scope="props">
-                                <img
+                                <AtomLogo
                                     class="atom-logo"
-                                    :src="props.row.logoUrl"
-                                    v-if="props.row.logoUrl"
-                                >
-                                <logo
-                                    class="atom-logo"
-                                    v-else
+                                    :logo-url="props.row.logoUrl"
                                     name="placeholder"
                                     size="38"
                                     style="fill:#C3CDD7"
@@ -221,12 +216,14 @@
 
 <script>
     import Logo from '@/components/Logo'
+    import { AtomLogo } from 'bkui-pipeline/vue2'
     import pipelineHeader from '@/components/devops/pipeline-header'
     import { mapActions } from 'vuex'
 
     export default {
         components: {
             Logo,
+            AtomLogo,
             pipelineHeader
         },
 

@@ -27,15 +27,11 @@
                     <i class="bk-icon icon-check-1"></i>
                 </span>
                 <p class="pipeline-template-logo">
-                    <img
-                        :src="temp.logoUrl"
-                        v-if="temp.logoUrl"
-                    >
-                    <logo
-                        size="50"
+                    <AtomLogo
+                        :logo-url="temp.logoUrl"
                         :name="temp.icon || 'placeholder'"
-                        v-else
-                    ></logo>
+                        size="50"
+                    />
                 </p>
                 <div class="pipeline-template-detail">
                     <p
@@ -84,6 +80,7 @@
 <script setup name='StoreTemplateList'>
     import PipelineTemplatePreview from '@/components/PipelineTemplatePreview'
     import UseInstance from '@/hook/useInstance'
+    import { AtomLogo } from 'bkui-pipeline/vue2'
     import { computed, onMounted, ref } from 'vue'
 
     const emit = defineEmits(['change'])

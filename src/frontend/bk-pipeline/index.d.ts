@@ -371,6 +371,11 @@ export function loadI18nMessages(i18n?: any): void;
  */
 export function useLang(): any;
 
+/**
+ * Atom logo with remote image load-fallback to built-in sprite icon
+ */
+export const AtomLogo: DefineComponent;
+
 declare const BkPipeline: BkPipelineComponent;
 
 export default BkPipeline;
