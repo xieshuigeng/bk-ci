@@ -128,7 +128,10 @@ services:
       - ./bkrepo-consul-services.json:/consul/config/services.json:ro
     networks:
       bkci:
-        ipv4_address: 172.28.0.10
+        # 原 172.28.0.10: 宿主机重启后 DHCP 容器抢占该地址，consul 重启时 libnetwork
+        # IPAM 残留占用无法回收（需 docker daemon 重启），改为 172.28.0.77。
+        # 若将来该地址仍被 IPAM 污染，再换一个空闲地址并同步 dnsmasq 的 --server 行。
+        ipv4_address: 172.28.0.77
     logging: *default-logging
 
   dnsmasq:
@@ -138,7 +141,7 @@ services:
     restart: unless-stopped
     command:
       - --no-resolv
-      - --server=/consul/172.28.0.10#8600
+      - --server=/consul/172.28.0.77#8600
       - --server=114.114.114.114
       - --server=223.5.5.5
       - --log-queries
