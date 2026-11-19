@@ -140,6 +140,7 @@ Consul HTTP API（`consul:8500`，由 Docker 嵌入式 DNS 解析 `consul` 主�
 - 已修复：后端 `/ms/project/api/user/locales/get` 返回 `zh_CN`，控制台启动脚本原样写入
   `window.INIT_LOCALE`，导致按 `zh_CN` 请求 `codelib/zh_CN.json` 等文件 404。现已在
   `frontend#console#index.html` 启动脚本中统一把下划线转为连字符（`zh_CN` → `zh-CN`）。
+- 已实现但**未验证/未进镜像**（提交 `2255681`）：原子图标加载失败回退单元 `AtomLogo`、无可用模板时的空白创建入口。当前前端镜像来自 release 产物，不包含这两项源码改动；openspec 验证项仍未勾选（见 `openspec/changes/add-atom-logo-load-fallback/tasks.md`、`openspec/changes/add-blank-pipeline-creation-entry/tasks.md`）。需在新机用 dev server + `:8088` 反代验证通过、并重新构建前端镜像后才算落地。
 
 ## 构建链路验证（2026-10-26）
 
@@ -227,6 +228,5 @@ cd deploy/local && ./fix-atom-logos.sh      # ATOMS_DIR 默认 /tmp/opencode/ato
   生成的绝对 URL 不带非标端口），直接访问 `http://localhost:8080/console/` 即可。
 - 已部署 bkrepo（gateway/auth/repository + 独立 mongodb），用于建项目时的制品库初始化。
 - 未部署 codecc/agentless 等可选组件；`CodeCCCheckAtom` 插件由公开 fork 自行构建安装（9 个默认插件均已装），其运行时兼容性未验证。
-- 模板商店为空（`GET /store/api/user/market/template/list` → `count:0`；项目侧 `GET /process/api/user/pipeline/template/v2/<project>/allTemplates`
-  → `2101034 模板不存在`）。而新建流水线页面必须选中一个已安装模板才可提交（`CreatePipeline.vue:368-369`），故 UI 上只能"导入"；空白新建请用 API：
-  `POST /process/api/user/pipelines/{projectId}`（body 为流水线 `Model`）。
+- 模板商店为空（`GET /store/api/user/market/template/list` → `count:0`；项目侧 `GET /process/api/user/pipeline/template/v2/<project>/allTemplates` → `2101034 模板不存在`）。**当前镜像**下新建流水线仍只能「导入」或走 API：`POST /process/api/user/pipelines/{projectId}`（body 为流水线 `Model`）。代码层面已新增空白创建入口（`openspec/changes/add-blank-pipeline-creation-entry/`，提交 `2255681`），但尚未随 release 镜像重建、也未完成浏览器验证，故不能按"已可用"对待。
+- 原子图标加载失败（社区包缺 `tapdTrigger.png`/`scmGitTrigger.png` 等）仍表现为无图标；`fix-atom-logos.sh` 修复的是 artifactory 静态文件。前端回退单元 `AtomLogo`（`openspec/changes/add-atom-logo-load-fallback/`，提交 `2255681`）同样未进镜像、未验证。

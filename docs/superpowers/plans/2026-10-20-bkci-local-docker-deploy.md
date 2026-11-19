@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **执行进度（2026-10-20 暂停）:** Task 1–8 已完成并通过两段审查（偏差见 handoff `/tmp/opencode/handoff-bkci-docker-deploy-2026-10-20.md`）；**Task 9 起未执行**。全程未 commit。继续前先读该 handoff。
+> **执行状态（2026-11-19 对账）:** 本文上半部保留 2026-10-20 原始逐步计划及其历史勾选；**实际完成情况以文末续节为准**：`附录：实施总结`（`:1051`）、`2026-10-23 续`（`:1122`）、`2026-10-26 续`（`:1179`）、`UI 走查问题清单`（`:1196`）、`2026-10-27 续`（`:1270`）、`续二`（`:1281`）、`2026-10-29 返回箭头验收`（`:1296`）。精简状态见 `deploy/local/README.md:134`。旧 handoff `/tmp/opencode/handoff-bkci-docker-deploy-2026-10-20.md` 已随临时目录清空，不再作为入口；迁移包位置与用法见仓库外的 `/home/xsg/aicode/bkci-local-stash/README.md`。
 
 **Goal:** 在本机用自行构建的网关/后端/前端三个镜像 + docker compose 编排全部依赖（MySQL/Redis/ES/RabbitMQ/Consul），完整跑起 bk-ci v4.2.0-rc.7 并完成端到端冒烟。
 
@@ -1025,7 +1025,9 @@ docker compose up -d --force-recreate <变更涉及的服务或 gateway/frontend
 - 内存不足: docker compose ps 查 OOMKilled, 给该服务加 JAVA_TOOL_OPTIONS=-Xmx384m
 ```
 
-- [ ] **Step 13.5: （询问用户后执行）提交 deploy/local 到 fork**
+- [x] **Step 13.5: （询问用户后执行）提交 deploy/local 到 fork**
+
+结果（2026-11-19）：用户确认后已推送个人 fork `mine/master`，未向 TencentBlueKing/bk-ci 提 PR。相关提交：`ba8eb2e`（部署配置）、`a485e93`（UI 根因）、`8ff8795`/`c882113`/`db1b676`（前端与文档）、`2255681`（两个 openspec 实现）、`7ead01d7130`（consul IP 修正）。**不得**提交 `rendered/`、`bkci-slim.tar.gz`、解包目录或任何渲染产物；该约束不变。
 
 ```bash
 cd /home/xsg/aicode/bk-ci
@@ -1300,3 +1302,12 @@ git push mine master
 结果：执行详情页箭头出现；**轮 1 箭头目标是流水线列表页，用户指正应为构建列表（执行历史页）**——修订为新增 `backRoute` prop（缺省回列表），`DetailHeader` 传 `pipelinesHistory`；轮 2 复验通过：箭头落 `.../history/history`，面包屑「流水线」项仍回列表，编排/执行记录/预览页维持 logo 无箭头。eslint 两文件 exit=0。spec/plan：`docs/superpowers/specs/2026-10-29-pipeline-breadcrumb-back-arrow-design.md`、`docs/superpowers/plans/2026-10-29-pipeline-breadcrumb-back-arrow.md`。
 
 提醒：`npm run dev` 会把产物写到 `src/frontend/frontend/pipeline/`（gitignore，与 prod 构建同目录混放，已见 `frontend#pipeline#index.html` 等 prod 命名件共存）；镜像链路不消费该目录（走 release 包），无影响，但不要将该目录内容直接当 release 产物使用。HMR websocket 固定 `127.0.0.1:8006`，跨机访问改码后需手动强刷。
+
+### 2026-11-19 文档状态对账
+
+- 顶部进度注记改为"正文保留历史、续节为准"；旧 `/tmp` handoff 入口已移除。
+- Task 13.5 标记完成：已推送个人 fork `mine/master`（最终提交 `7ead01d7130`），未向上游提 PR。
+- `2026-10-29` 面包屑计划 Task 2–4 回填真实结果，占位模板删除。
+- `deploy/local/README.md` 区分"当前镜像限制"与"代码已实现待验证"。
+- 两个 openspec 追加验证前置与逐条口径；**均未勾选、未归档**，待新机恢复后验证通过再归档。
+- 本轮计划与结果记录：`docs/superpowers/plans/2026-11-19-doc-status-reconciliation.md`。
