@@ -125,7 +125,7 @@ docker exec bkci-store curl -sS \
 | lua `require()` 按进程 CWD 解析 `conf/lua/?.lua`，而命令 `cd /etc/bkci` 后启动 | 命令中 exec 前 `cd /usr/local/openresty/nginx`（其 conf 为指向 `/data/workspace/gateway/core` 的符号链接） |
 
 Consul 域名: `BK_CI_CONSUL_DOMAIN=consul` 无需改 `service.consul`——dnsmasq 将 `/consul/`
-转发给 consul DNS(172.28.0.10:8600)。`process.service.consul`、`frontend.service.consul`
+转发给 consul DNS(172.28.0.77:8600)。`process.service.consul`、`frontend.service.consul`
 **在 gateway 容器内**可解析（其 `dns: 172.28.0.53` → dnsmasq → consul DNS，nginx 启动时
 解析 `frontend.service.consul` 即依赖此链路）；**后端容器内不经 DNS 解析这些域名**，后端走
 Consul HTTP API（`consul:8500`，由 Docker 嵌入式 DNS 解析 `consul` 主机名）完成注册/发现
