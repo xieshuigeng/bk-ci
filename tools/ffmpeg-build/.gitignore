@@ -1,0 +1,4 @@
+out/
+out.dynamic-*/
+*.tar.gz
+*.log

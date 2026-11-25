@@ -269,6 +269,7 @@
     import ThirdPartyReport from '@/components/Outputs/ThirdPartyReport'
     import ExtMenu from '@/components/pipelineList/extMenu'
     import { extForFile, repoTypeMap, repoTypeNameMap } from '@/utils/pipelineConst'
+    import { normalizeInternalReportUrl } from '@/utils/report'
     import { convertFileSize, convertTime } from '@/utils/util'
     import { mapActions, mapState } from 'vuex'
 
@@ -712,11 +713,13 @@
                         const isReportOutput = item.artifactoryType === 'REPORT'
                         const isImageOutput = item.artifactoryType === 'IMAGE'
                         const icon = isReportOutput ? 'order' : item.folder ? 'folder' : extForFile(item.name)
-                        const id = isReportOutput ? (item.createTime + item.indexFileUrl) : item.fullPath
+                        const indexFileUrl = normalizeInternalReportUrl(item.indexFileUrl, item.reportType)
+                        const id = isReportOutput ? (item.createTime + indexFileUrl) : item.fullPath
                         const type = this.isArtifact(item.artifactoryType) ? 'ARTIFACT' : ''
                         return {
                             type,
                             ...item,
+                            indexFileUrl,
                             id,
                             icon,
                             isReportOutput,

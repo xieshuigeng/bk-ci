@@ -35,6 +35,15 @@ x-backend: &backend
     DISPATCH_DOCKERFILE: /data/workspace/agent-package/jar/worker-agent.jar
     DISPATCH_SCRIPTS: /data/workspace/agent-package/script
     KUBERNETES_ENABLE: "true"
+    # 本地排障: project 在 @PostConstruct(MessageCodeDetailService.initMessageCodeDetail) 首连 redis 时
+    # main 持 singletonsLock 等待 lettuce 连接 future, epoll IO 线程处理握手需 getBean 抢同锁→死锁
+    # (service.log 停在 begin init messageCodeDetail, consul 无 project 注册, 网关 503)。
+    # 延迟初始化可规避该启动死锁; 见 rendered/etc/ci/common.yml 记录。
+    SPRING_MAIN_LAZY_INITIALIZATION_ENABLED: "true"
+    # lettuce MicrometerCommandLatencyRecorder 在 epoll IO 线程回调 PrometheusExemplars -> 需 getBean，
+    # 与 main 初始化持有的 singleton lock 互锁导致连接永不完成。禁用该 tracing exemplar 自动配置规避。
+    SPRING_AUTOCONFIGURE_EXCLUDE: "org.springframework.boot.actuate.autoconfigure.tracing.prometheus.PrometheusExemplarsAutoConfiguration"
+    MANAGEMENT_TRACING_ENABLED: "false"
   volumes:
     - ./rendered/etc/ci:/etc/bkci/conf:ro
     - ./entrypoint-service.sh:/entrypoint.sh:ro
@@ -276,7 +285,7 @@ services:
     restart: unless-stopped
     network_mode: host
     extra_hosts:
-      - "rabbitmq:172.20.4.188"
+      - "rabbitmq:172.28.0.7"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./rendered/etc/ci:/etc/bkci/conf:ro
@@ -284,11 +293,12 @@ services:
       - /data/bkci-local:/data/bkci-local
     environment:
       BK_HOME: /data/bkhome
-      DEVOPS_GATEWAY: http://172.20.4.188:8080
+      DEVOPS_GATEWAY: http://172.20.4.209:8080
+      devops_gateway: http://172.20.4.209:8080
       SPRING_CLOUD_CONSUL_ENABLED: "false"
       SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: "false"
       SPRING_CLOUD_CONSUL_DISCOVERY_REGISTER: "false"
-      SPRING_APPLICATION_JSON: '{"spring":{"main":{"allow-bean-definition-overriding":true},"cloud":{"consul":{"enabled":false,"discovery":{"enabled":false,"register":false}}}},"dockerhost":{"localIp":"172.20.4.188","elasticity":{"memReservation":8589934592,"memThreshold":90,"cpuThreshold":90}},"dockerCli":{"hostPathWorkspace":"/data/bkci-local/docker/workspace","hostPathApps":"/data/bkci-local/docker/apps/","hostPathInit":"/data/bkci-local/agent-package/script/init.sh","hostPathSleep":"/data/bkci-local/agent-package/script/sleep.sh","hostPathLogs":"/data/bkci-local/logs/ci/docker","hostPathCommonEnv":"/data/bkci-local/docker/common_env","hostPathProjectShare":"/data/bkci-local/docker/share/project","hostPathMavenRepo":"/data/bkci-local/docker/thirdparty/maven_repo","hostPathNpmPrefix":"/data/bkci-local/docker/thirdparty/npm_prefix","hostPathNpmCache":"/data/bkci-local/docker/thirdparty/npm_cache","hostPathNpmRc":"/data/bkci-local/docker/thirdparty/.npmrc","hostPathCcache":"/data/bkci-local/docker/thirdparty/ccache/","hostPathGradleCache":"/data/bkci-local/docker/thirdparty/gradle_caches","hostPathGolangCache":"/data/bkci-local/docker/thirdparty/go_cache/","hostPathSbtCache":"/data/bkci-local/docker/thirdparty/.ivy2/","hostPathSbt2Cache":"/data/bkci-local/docker/thirdparty/sbt_cache/","hostPathYarnCache":"/data/bkci-local/docker/thirdparty/yarn_cache/","hostPathOverlayfsCache":"/data/bkci-local/docker/overlayfs","hostPathLinkDir":"/data/bkci-local/docker/link","hostPathHosts":"/etc/hosts","shareProjectCodeWhiteList":"none","dockerAgentPath":"/data/bkci-local/agent-package/jar/worker-agent.jar"}}'
+      SPRING_APPLICATION_JSON: '{"spring":{"main":{"allow-bean-definition-overriding":true},"cloud":{"consul":{"enabled":false,"discovery":{"enabled":false,"register":false}}}},"dockerhost":{"localIp":"172.20.4.209","elasticity":{"memReservation":8589934592,"memThreshold":90,"cpuThreshold":90}},"dockerCli":{"hostPathWorkspace":"/data/bkci-local/docker/workspace","hostPathApps":"/data/bkci-local/docker/apps/","hostPathInit":"/data/bkci-local/agent-package/script/init.sh","hostPathSleep":"/data/bkci-local/agent-package/script/sleep.sh","hostPathLogs":"/data/bkci-local/logs/ci/docker","hostPathCommonEnv":"/data/bkci-local/docker/common_env","hostPathProjectShare":"/data/bkci-local/docker/share/project","hostPathMavenRepo":"/data/bkci-local/docker/thirdparty/maven_repo","hostPathNpmPrefix":"/data/bkci-local/docker/thirdparty/npm_prefix","hostPathNpmCache":"/data/bkci-local/docker/thirdparty/npm_cache","hostPathNpmRc":"/data/bkci-local/docker/thirdparty/.npmrc","hostPathCcache":"/data/bkci-local/docker/thirdparty/ccache/","hostPathGradleCache":"/data/bkci-local/docker/thirdparty/gradle_caches","hostPathGolangCache":"/data/bkci-local/docker/thirdparty/go_cache/","hostPathSbtCache":"/data/bkci-local/docker/thirdparty/.ivy2/","hostPathSbt2Cache":"/data/bkci-local/docker/thirdparty/sbt_cache/","hostPathYarnCache":"/data/bkci-local/docker/thirdparty/yarn_cache/","hostPathOverlayfsCache":"/data/bkci-local/docker/overlayfs","hostPathLinkDir":"/data/bkci-local/docker/link","hostPathHosts":"/etc/hosts","shareProjectCodeWhiteList":"none","dockerAgentPath":"/data/bkci-local/agent-package/jar/worker-agent.jar"}}'
     command: ["/bin/bash", "/entrypoint.sh", "dockerhost"]
     depends_on:
       - gateway
