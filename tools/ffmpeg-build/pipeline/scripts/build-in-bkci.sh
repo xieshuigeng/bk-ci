@@ -11,7 +11,7 @@ INNER_BUILD_SCRIPT_SRC="${INNER_BUILD_SCRIPT_SRC:-$SCRIPT_DIR/../../scripts/buil
 INNER_BUILD_SCRIPT_B64="@base64:scripts/build-in-container.sh"
 
 WORKSPACE_DIR="${WORKSPACE:-${bkWorkspace:-/data/devops/workspace}}"
-OUT_HOST="${OUT_HOST:-/data/bkci-local/ffmpeg-out}"
+OUT_HOST="${OUT_HOST:-$WORKSPACE_DIR/ffmpeg-out}"
 OUT_WS="${WORKSPACE_DIR}/ffmpeg-out-static"
 DEPS_WS="${WORKSPACE_DIR}/deps-cache"
 ROOTFS="${WORKSPACE_DIR}/alpine-rootfs"

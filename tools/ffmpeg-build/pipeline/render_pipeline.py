@@ -16,6 +16,7 @@ FORBIDDEN_LITERALS = (
     "demotest",
     "127.0.0.1:5000/bkci/ci:jdk17",
     "28ee946a59f64949a74f3dee40a1bda4",
+    "/data/bkci-local/ffmpeg-out",
 )
 
 
@@ -100,9 +101,14 @@ def main(argv=None) -> int:
 
     rendered = render_value(data, root, values)
     text = json.dumps(rendered, ensure_ascii=False, indent=2) + "\n"
-    validate(text)
-
     output = args.output.resolve()
+    try:
+        validate(text)
+    except Exception:
+        if output.is_file():
+            output.unlink()
+        raise
+
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(text, encoding="utf-8")
     return 0

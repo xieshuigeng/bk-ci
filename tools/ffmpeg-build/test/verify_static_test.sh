@@ -28,8 +28,14 @@ expect_fail() {
   fi
 }
 
-# 1. missing output directory / missing binaries
-expect_fail "missing files" "$TMP/does-not-exist"
+# 1. missing output directory / missing binaries must fail with a clear error
+ERR="$TMP/missing.err"
+if PATH="$TMP/fakebin:$PATH" "$VERIFY" "$TMP/does-not-exist" >/dev/null 2>"$ERR"; then
+  echo "FAIL: missing files should have failed"; exit 1
+fi
+grep -q 'ERROR: missing or non-executable:' "$ERR" || {
+  echo "FAIL: missing files did not report a clear error"; cat "$ERR"; exit 1
+}
 
 # 2. dynamic-looking file must be rejected even with correct version
 make_fake_tools
@@ -53,8 +59,25 @@ make_bins n9.1
 (cd "$TMP/fixture/bin" && sha256sum ffmpeg ffprobe ffplay > ../checksums.txt)
 PATH="$TMP/fakebin:$PATH" "$VERIFY" "$TMP/fixture" | grep -q '^VERIFY_OK$'
 
-# 6. corrupted checksum must fail
-printf '%064d  ffmpeg\n' 0 > "$TMP/fixture/checksums.txt"
+# 6. empty checksums.txt must fail
+: > "$TMP/fixture/checksums.txt"
+expect_fail "empty checksums" "$TMP/fixture"
+
+# 7. incomplete checksums.txt must fail
+(cd "$TMP/fixture/bin" && sha256sum ffmpeg ffprobe ffplay > ../checksums.txt)
+grep -v '  ffplay$' "$TMP/fixture/checksums.txt" > "$TMP/checksums.tmp"
+mv "$TMP/checksums.tmp" "$TMP/fixture/checksums.txt"
+expect_fail "incomplete checksums" "$TMP/fixture"
+
+# 8. corrupted checksum must fail while all three names remain present
+(cd "$TMP/fixture/bin" && sha256sum ffmpeg ffprobe ffplay > ../checksums.txt)
+python3 - "$TMP/fixture/checksums.txt" <<'PY'
+import sys
+p = sys.argv[1]
+lines = open(p).read().splitlines()
+lines[0] = '0' * 64 + '  ffmpeg'
+open(p, 'w').write('\n'.join(lines) + '\n')
+PY
 expect_fail "checksum mismatch" "$TMP/fixture"
 
 echo "verify_static_test: PASS"

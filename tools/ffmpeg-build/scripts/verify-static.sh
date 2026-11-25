@@ -33,12 +33,32 @@ for name in ffmpeg ffprobe ffplay; do
 done
 
 if [ -f "$OUT_DIR/checksums.txt" ]; then
-  if (cd "$OUT_DIR" && sha256sum -c --quiet checksums.txt) >/dev/null 2>&1; then
-    :
-  elif (cd "$OUT_DIR/bin" && sha256sum -c --quiet ../checksums.txt) >/dev/null 2>&1; then
-    :
+  checksum_file="$OUT_DIR/checksums.txt"
+  [ -s "$checksum_file" ] || fail "checksums.txt is empty: $checksum_file"
+
+  layout=""
+  for name in ffmpeg ffprobe ffplay; do
+    count="$(awk -v n="$name" '$2 == n || $2 == "bin/" n { c++ } END { print c+0 }' "$checksum_file")"
+    [ "$count" -eq 1 ] || fail "checksums.txt must contain exactly one entry for $name"
+
+    if awk -v n="$name" '$2 == "bin/" n { found=1 } END { exit !found }' "$checksum_file"; then
+      name_layout="bin"
+    else
+      name_layout="bare"
+    fi
+    if [ -z "$layout" ]; then
+      layout="$name_layout"
+    elif [ "$layout" != "$name_layout" ]; then
+      fail "checksums.txt mixes bare and bin/ paths"
+    fi
+  done
+
+  if [ "$layout" = "bin" ]; then
+    (cd "$OUT_DIR" && sha256sum -c --quiet checksums.txt) >/dev/null 2>&1 \
+      || fail "checksum verification failed"
   else
-    fail "checksum verification failed"
+    (cd "$OUT_DIR/bin" && sha256sum -c --quiet ../checksums.txt) >/dev/null 2>&1 \
+      || fail "checksum verification failed"
   fi
 fi
 

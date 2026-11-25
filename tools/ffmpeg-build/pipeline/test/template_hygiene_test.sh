@@ -14,7 +14,10 @@ bash -n "$S/upload-artifact.sh"
 bash -n "$S/upload-report.sh"
 
 grep -q '@base64:scripts/build-in-container.sh' "$S/build-in-bkci.sh"
-! grep -R -qE '172\.|p-8bb091809f5d4c04ac88fe7ef525f617|demotest|127\.0\.0\.1:5000/bkci/ci:jdk17|28ee946a59f64949a74f3dee40a1bda4' "$T" "$S"
+if grep -R -nE '172\.|p-8bb091809f5d4c04ac88fe7ef525f617|demotest|127\.0\.0\.1:5000/bkci/ci:jdk17|28ee946a59f64949a74f3dee40a1bda4|/data/bkci-local/ffmpeg-out' "$T" "$S"; then
+  echo "FAIL: forbidden literal in template or pipeline scripts"
+  exit 1
+fi
 
 python3 - "$T" <<'PY'
 import json, sys
