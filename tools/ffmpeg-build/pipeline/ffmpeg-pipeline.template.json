@@ -1,0 +1,190 @@
+{
+  "@type": "Model",
+  "name": "ffmpeg-build-n9.1",
+  "desc": "FFmpeg n9.1 source build (C0 frozen) via Docker on Ubuntu 24.04, executed in bk-ci",
+  "stages": [
+    {
+      "containers": [
+        {
+          "@type": "trigger",
+          "id": "0",
+          "name": "trigger",
+          "elements": [
+            {
+              "@type": "manualTrigger",
+              "name": "manual",
+              "id": "T-1-1-1",
+              "canElementSkip": false,
+              "useLatestParameters": false,
+              "executeCount": 1,
+              "version": "1.*",
+              "additionalOptions": {
+                "enable": true,
+                "continueWhenFailed": false,
+                "retryWhenFailed": false,
+                "retryCount": 0,
+                "manualRetry": true,
+                "timeout": 100,
+                "timeoutVar": "100",
+                "pauseBeforeExec": false,
+                "subscriptionPauseUser": "",
+                "customCondition": "",
+                "enableCustomEnv": true
+              },
+              "classType": "manualTrigger",
+              "atomCode": "manualTrigger",
+              "taskAtom": ""
+            }
+          ],
+          "params": [],
+          "containerId": "0",
+          "containerHashId": "c-trigger",
+          "matrixGroupFlag": false,
+          "classType": "trigger"
+        }
+      ],
+      "id": "stage-1",
+      "name": "stage-1",
+      "tag": [
+        "__STAGE_TAG__"
+      ],
+      "fastKill": false,
+      "finally": false
+    },
+    {
+      "containers": [
+        {
+          "@type": "vmBuild",
+          "id": "1",
+          "name": "build-ffmpeg",
+          "elements": [
+            {
+              "@type": "linuxScript",
+              "name": "build-and-verify",
+              "id": "e-build",
+              "scriptType": "SHELL",
+              "script": "@file:pipeline/scripts/build-in-bkci.sh",
+              "continueNoneZero": false,
+              "enableArchiveFile": false,
+              "additionalOptions": {
+                "enable": true,
+                "continueWhenFailed": false,
+                "retryWhenFailed": false,
+                "retryCount": 0,
+                "manualRetry": true,
+                "timeout": 480,
+                "timeoutVar": "480",
+                "pauseBeforeExec": false,
+                "subscriptionPauseUser": "",
+                "customCondition": "",
+                "enableCustomEnv": true
+              },
+              "executeCount": 1,
+              "version": "1.*",
+              "classType": "linuxScript",
+              "atomCode": "linuxScript",
+              "taskAtom": ""
+            },
+            {
+              "@type": "linuxScript",
+              "name": "upload-ffmpeg-artifacts-local",
+              "id": "e-upload-artifact",
+              "scriptType": "SHELL",
+              "script": "@file:pipeline/scripts/upload-artifact.sh",
+              "continueNoneZero": false,
+              "enableArchiveFile": false,
+              "additionalOptions": {
+                "enable": true,
+                "continueWhenFailed": false,
+                "retryWhenFailed": false,
+                "retryCount": 0,
+                "manualRetry": true,
+                "timeout": 480,
+                "timeoutVar": "480",
+                "pauseBeforeExec": false,
+                "subscriptionPauseUser": "",
+                "customCondition": "",
+                "enableCustomEnv": true
+              },
+              "executeCount": 1,
+              "version": "1.*",
+              "classType": "linuxScript",
+              "atomCode": "linuxScript",
+              "taskAtom": ""
+            },
+            {
+              "@type": "linuxScript",
+              "name": "upload-ffmpeg-report-local",
+              "id": "e-upload-report",
+              "scriptType": "SHELL",
+              "script": "@file:pipeline/scripts/upload-report.sh",
+              "continueNoneZero": false,
+              "enableArchiveFile": false,
+              "additionalOptions": {
+                "enable": true,
+                "continueWhenFailed": false,
+                "retryWhenFailed": false,
+                "retryCount": 0,
+                "manualRetry": true,
+                "timeout": 480,
+                "timeoutVar": "480",
+                "pauseBeforeExec": false,
+                "subscriptionPauseUser": "",
+                "customCondition": "",
+                "enableCustomEnv": true
+              },
+              "executeCount": 1,
+              "version": "1.*",
+              "classType": "linuxScript",
+              "atomCode": "linuxScript",
+              "taskAtom": ""
+            }
+          ],
+          "baseOS": "LINUX",
+          "vmNames": [],
+          "maxQueueMinutes": 120,
+          "maxRunningMinutes": 480,
+          "dispatchType": {
+            "buildType": "DOCKER",
+            "value": "__BUILD_IMAGE__",
+            "imageType": "THIRD",
+            "credentialId": "",
+            "credentialProject": "",
+            "imageCode": "",
+            "imageVersion": "jdk17",
+            "imageName": "__BUILD_IMAGE__",
+            "performanceConfigId": 0,
+            "imageRepositoryUserName": "",
+            "imageRepositoryPassword": "",
+            "imagePublicFlag": true,
+            "imageRDType": "THIRD",
+            "recommendFlag": true
+          },
+          "showBuildResource": false,
+          "enableExternal": false,
+          "containerId": "1",
+          "containerHashId": "c-build",
+          "jobId": "job_ffmpeg",
+          "matrixGroupFlag": false,
+          "nfsSwitch": false,
+          "classType": "vmBuild"
+        }
+      ],
+      "id": "stage-2",
+      "name": "build",
+      "tag": [
+        "__STAGE_TAG__"
+      ],
+      "fastKill": false,
+      "finally": false
+    }
+  ],
+  "labels": [],
+  "pipelineCreator": "admin",
+  "projectId": "__PROJECT_ID__",
+  "pipelineId": "__PIPELINE_ID__",
+  "events": {},
+  "staticViews": [],
+  "publicVarGroups": [],
+  "latestVersion": "__LATEST_VERSION__"
+}
