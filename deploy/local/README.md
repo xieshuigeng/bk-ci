@@ -134,7 +134,7 @@ Consul HTTP API（`consul:8500`，由 Docker 嵌入式 DNS 解析 `consul` 主�
 ## 当前状态（精简）
 - 已完成：镜像构建、编排配置、渲染、wave A 全量启动、BkRepo 3.8.9-rc.2 打通建项目、9 个默认插件安装并验证
 - 已完成：`dockerhost` + JDK17 构建镜像端到端验证；build #14 的 stage-1/2/3 全部成功，构建日志可在日志接口读取
-- 已完成：UI 走查 3 项待办根因分析（2026-10-27）——「画布"?"」= 当初 API 造数据时**写入侧**编码丢失（库里名字节就是 `3F3F3F`，非前端问题）；「缺图标」= artifactory 静态 logo 未初始化（见排障节，已用 `deploy/local/fix-atom-logos.sh` 修复：9 个插件 + 31 个内置图标经网关校验全部 200，仅 tapd/scm 两个 SaaS 专属图标社区包未附带）；「详情页无返回键」= 前端 bug（`bk-breadcrumb` 的 `#prefix` 与 `back-router` 互斥，返回箭头恒不渲染）；「新建流水线只有模板/导入」= 上游设计（必须选已安装模板）+ 本地模板商店为空 → 立增强提案。详见 `docs/superpowers/plans/2026-10-20-bkci-local-docker-deploy.md`「UI 走查问题清单」
+- 已完成：UI 走查 3 项待办根因分析（2026-10-27）——「画布"?"」= 当初 API 造数据时**写入侧**编码丢失（库里名字节就是 `3F3F3F`，非前端问题）；「缺图标」= artifactory 静态 logo 未初始化（2026-11-25 起改为 artifactory 启动自动播种 + 仓库补充图标，网关校验全部 icon URL 200，见排障节）；「详情页无返回键」= 前端 bug（`bk-breadcrumb` 的 `#prefix` 与 `back-router` 互斥，返回箭头恒不渲染）；「新建流水线只有模板/导入」= 上游设计（必须选已安装模板）+ 本地模板商店为空 → 立增强提案。详见 `docs/superpowers/plans/2026-10-20-bkci-local-docker-deploy.md`「UI 走查问题清单」
 - 操作提醒：用 API/curl 造含中文的数据前先 `export LC_ALL=C.UTF-8`（或 `PYTHONUTF8=1`）。宿主 charset 为 `ANSI_X3.4-1968` 时，脚本写模型 JSON 会把中文替换成 `?` 落库（前端只如实显示，服务端链路本身无损：JDK17 + `LANG=en_US.UTF-8` + JDBC `characterEncoding=utf8`）
 - 注意：`CodeCCCheckAtom` 来自公开 fork，仅验证安装/默认标记，运行时兼容性未验证
 - 已修复：后端 `/ms/project/api/user/locales/get` 返回 `zh_CN`，控制台启动脚本原样写入
@@ -202,15 +202,25 @@ curl -s -H 'X-DEVOPS-UID: admin' -H 'X-DEVOPS-TOKEN: devops' \
 
 根因：本地 compose 未跑官方安装脚本 `docker-images/core/ci/ci-docker/scripts/bk-ci-setup.sh`，其 `setup_ci_artifactory()` 会把镜像内置 logo 静态文件复制进 artifactory 存储根（`cp -nrv "$BK_CI_SRC_DIR/support-files/file" "$BK_CI_DATA_DIR/artifactory/"`）。另一类是 9 个 zip 直装插件：其元数据 `logoUrl` 指向 `file/$<hash>.<hash>.png`，这些由官方发布流程上传，本地 `/api/op/pipeline/atom/deploy` 不上传图标（包内其实带图，如 `checkout/file/checkout.png`、`run/file/logo.png`）。
 
-修复（幂等脚本，容器/数据卷重建后重跑）:
+永久修复（2026-11-25，无需手工步骤）：
+
+`docker-compose.yml` 的 `artifactory` 服务在启动业务进程前先运行 `seed-artifactory-icons.sh`，把镜像内置 `/data/workspace/support-files/file` 与仓库提交的 `deploy/local/icon-assets/` 幂等复制到 `archiveLocalBasePath/file/`：
+
+- 镜像内置 31 个 PNG 与原目录层级一并复制（`<base>/file/png/*.png`）；
+- 9 个 zip 插件的哈希图标直接落在 `<base>/file/$<hash>.<hash>.png`：其 `logoUrl` 双重解码后是 `//file/$hash.png`，不在 `png/` 子目录；图标使用 `support-files/file/png/` 中已有的通用图，而非官方原图；
+- 社区包缺失的 `tapdTrigger.png`、`scmGitTrigger.png` 和 `svg/code-SVN.svg` 由 `icon-assets/` 补齐；
+- `support-files/sql/5001_init_dml/5001_ci_repository-init_dml_mysql.sql` 中 TGIT 的 `LOGO_URL` 编码已修正（`%2Ffile%png%2F` → `%2Ffile%2Fpng%2F`），当前运行库已同步执行一次 UPDATE。
+
+验收：
 
 ```bash
-cd deploy/local && ./fix-atom-logos.sh      # ATOMS_DIR 默认 /tmp/opencode/atoms，可用环境变量覆盖
+bash deploy/local/test/seed_icons_test.sh   # 离线校验播种路径与幂等性
+bash deploy/local/test/icon-urls-test.sh    # 运行库全部 icon URL 经网关返回 200
 ```
 
-脚本做三件事：复制镜像内置 `support-files/file` 到存储根（层级必须是 `<存储根>/file/png/*.png`，浅一层仍 500）、按元数据 `logoUrl` **双重 URL 解码后**的文件名把包内图片落位、最后逐个经网关校验 HTTP 码。2026-10-27 执行结果：9 个插件 + 31 个内置原子/分类图标全部 200。
+2026-11-25 实测：启动日志 `seed-artifactory-icons: 43 files under /data/bkce/public/ci/artifactory/file`，`icon_urls_test: PASS (36 urls)`（去重后的 URL 数；TGIT 修正后与已有配置 URL 合并）。`deploy/local/fix-atom-logos.sh` 保留为手工兜底，常规部署已不再需要执行。
 
-残留两点：`codeTapdWebHookTrigger`/`codeScmGitWebHookTrigger` 的 `tapdTrigger.png`、`scmGitTrigger.png` 社区包内并未附带（SaaS 专属），仍 500，表现为这两个触发元素无图标；另外前端 `bk-pipeline/src/Atom.vue:38` 只要 `logoUrl` 非空就用 `<img>` 且无 `@error` 回退到内置 sprite 图标，所以任何一个 500 都直接表现为"无图标"（改进见 `openspec/changes/add-atom-logo-load-fallback/`）。
+前端 `bk-pipeline/src/Atom.vue:38` 只要 `logoUrl` 非空就用 `<img>` 且无 `@error` 回退到内置 sprite 图标，研发商店列表卡片同样直接渲染 `logoUrl`；`AtomLogo` 失败回退单元（`openspec/changes/add-atom-logo-load-fallback/`，提交 `2255681`）仍未进镜像、未验证。当前所有库内 URL 均 200，但未来若出现新的缺失文件仍会空白；本次只修根因，不重建前端镜像。
 
 ### JVM 默认字符集是 ASCII（镜像内 LANG 指向不存在的 locale）
 
@@ -229,4 +239,4 @@ cd deploy/local && ./fix-atom-logos.sh      # ATOMS_DIR 默认 /tmp/opencode/ato
 - 已部署 bkrepo（gateway/auth/repository + 独立 mongodb），用于建项目时的制品库初始化。
 - 未部署 codecc/agentless 等可选组件；`CodeCCCheckAtom` 插件由公开 fork 自行构建安装（9 个默认插件均已装），其运行时兼容性未验证。
 - 模板商店为空（`GET /store/api/user/market/template/list` → `count:0`；项目侧 `GET /process/api/user/pipeline/template/v2/<project>/allTemplates` → `2101034 模板不存在`）。**当前镜像**下新建流水线仍只能「导入」或走 API：`POST /process/api/user/pipelines/{projectId}`（body 为流水线 `Model`）。代码层面已新增空白创建入口（`openspec/changes/add-blank-pipeline-creation-entry/`，提交 `2255681`），但尚未随 release 镜像重建、也未完成浏览器验证，故不能按"已可用"对待。
-- 原子图标加载失败（社区包缺 `tapdTrigger.png`/`scmGitTrigger.png` 等）仍表现为无图标；`fix-atom-logos.sh` 修复的是 artifactory 静态文件。前端回退单元 `AtomLogo`（`openspec/changes/add-atom-logo-load-fallback/`，提交 `2255681`）同样未进镜像、未验证。
+- 原子图标 URL 当前经网关全部 200；此前社区包缺失的 `tapdTrigger.png`/`scmGitTrigger.png` 已由仓库通用图补齐，artifactory 静态文件按启动自动播种。前端回退单元 `AtomLogo`（`openspec/changes/add-atom-logo-load-fallback/`，提交 `2255681`）仍未进镜像、未验证，未来新增缺失文件仍可能空白；见排障节。
