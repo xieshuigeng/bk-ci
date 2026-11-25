@@ -39,7 +39,7 @@ SCRIPT_DST="$ROOTFS/usr/local/bin/build-in-container.sh"
 if [ -f "$INNER_BUILD_SCRIPT_SRC" ]; then
   echo "[ROOTFS] copy inner build script from $INNER_BUILD_SCRIPT_SRC"
   cp "$INNER_BUILD_SCRIPT_SRC" "$SCRIPT_DST"
-elif [[ "$INNER_BUILD_SCRIPT_B64" != "@base64:"* ]]; then
+elif printf '%s' "$INNER_BUILD_SCRIPT_B64" | base64 -d >/dev/null 2>&1; then
   echo "[ROOTFS] decode embedded inner build script"
   printf '%s' "$INNER_BUILD_SCRIPT_B64" | base64 -d > "$SCRIPT_DST"
 else
