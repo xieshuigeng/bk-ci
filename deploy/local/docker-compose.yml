@@ -275,7 +275,18 @@ services:
   openapi:     { <<: *backend, container_name: bkci-openapi,     command: ["/bin/bash", "/entrypoint.sh", "openapi"] }
   websocket:   { <<: *backend, container_name: bkci-websocket,   command: ["/bin/bash", "/entrypoint.sh", "websocket"] }
   misc:        { <<: *backend, container_name: bkci-misc,        command: ["/bin/bash", "/entrypoint.sh", "misc"] }
-  artifactory: { <<: *backend, container_name: bkci-artifactory, command: ["/bin/bash", "/entrypoint.sh", "artifactory"] }
+  artifactory:
+    <<: *backend
+    container_name: bkci-artifactory
+    command:
+      - /bin/bash
+      - -c
+      - EXTRA_SRC=/opt/icon-assets /bin/bash /seed-icons.sh && exec /bin/bash /entrypoint.sh artifactory
+    volumes:
+      - ./rendered/etc/ci:/etc/bkci/conf:ro
+      - ./entrypoint-service.sh:/entrypoint.sh:ro
+      - ./seed-artifactory-icons.sh:/seed-icons.sh:ro
+      - ./icon-assets:/opt/icon-assets:ro
   metrics:     { <<: *backend, container_name: bkci-metrics,     command: ["/bin/bash", "/entrypoint.sh", "metrics"] }
 
   # ---------- 构建资源（wave B，docker build）----------

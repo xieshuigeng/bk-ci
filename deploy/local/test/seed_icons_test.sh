@@ -45,7 +45,10 @@ assert_file "$TMP/root/file/png/manualTrigger.png"
     exit 1
 }
 
-for name in "${HASH_PNGS[@]}" tapdTrigger.png scmGitTrigger.png; do
+for name in "${HASH_PNGS[@]}"; do
+    assert_file "$TMP/root/file/$name"
+done
+for name in tapdTrigger.png scmGitTrigger.png; do
     assert_file "$TMP/root/file/png/$name"
 done
 assert_file "$TMP/root/file/svg/code-SVN.svg"
