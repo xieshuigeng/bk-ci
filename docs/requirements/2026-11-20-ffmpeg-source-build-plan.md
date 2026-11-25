@@ -314,3 +314,9 @@ ldd ./ffmpeg ./ffprobe ./ffplay || true
 - 用户明确授权“先提交”，因此本次将 `add-atom-logo-load-fallback` 与 `add-blank-pipeline-creation-entry` 两个 active change 补 `.openspec.yaml` 后归档，并提交到 `master`、推送 `mine master`。
 - OpenSpec gate 的 3.1–3.4、4.1–4.5 验证证据仍未补齐，对应 `tasks.md` 条目保持未勾选；本次提交不包含伪造的验证结论。
 - 后续补齐证据后，再单独更新归档 change 的 tasks 与计划文档。
+
+### 2026-11-25 可复现构建资产提交范围
+
+- 已按 `docs/superpowers/specs/2026-11-25-ffmpeg-n91-build-assets-design.md` 提交构建脚本、校验脚本与脱敏流水线模板。
+- 不提交二进制、tar、构建报告、校验和、FFmpeg 源码、rootfs、依赖缓存、真实 ID/IP/凭据。
+- 校验：`verify_static_test.sh`、`ffplay_enabled_test.sh`、`template_hygiene_test.sh`、`render_pipeline_test.sh` 均 PASS。

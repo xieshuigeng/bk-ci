@@ -1,4 +1,5 @@
 out/
 out.dynamic-*/
+pipeline/rendered/
 *.tar.gz
 *.log

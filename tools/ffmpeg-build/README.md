@@ -15,6 +15,42 @@ docker run --rm \
   127.0.0.1:5000/ffmpeg-build:n9.1-static-musl
 ```
 
+## Local reproduction
+
+After the build, verify the three deliverables are static and are the expected version:
+
+```bash
+scripts/verify-static.sh out
+```
+
+`verify-static.sh` accepts an optional output directory, so it can also check an existing artifact directory:
+
+```bash
+scripts/verify-static.sh /data/bkci-local/ffmpeg-out
+```
+
+It checks `bin/ffmpeg`, `bin/ffprobe`, and `bin/ffplay` with `file`, `ldd`, and `-version`. If `checksums.txt` exists, it is verified too.
+
+## bk-ci pipeline reproduction
+
+The bk-ci pipeline is stored as a sanitized template. Render it with real environment values supplied only at render time:
+
+```bash
+python3 pipeline/render_pipeline.py \
+  --template pipeline/ffmpeg-pipeline.template.json \
+  --project-id '<project-uuid>' \
+  --project-code '<project-code>' \
+  --pipeline-id '<pipeline-id>' \
+  --artifactory-base-url 'http://<artifactory-host>:<port>' \
+  --gateway 'http://<gateway-host>:<port>' \
+  --build-image '<build-image>' \
+  --output pipeline/rendered/ffmpeg-pipeline.json
+```
+
+Import the generated `pipeline/rendered/ffmpeg-pipeline.json` into bk-ci. The rendered directory is ignored by git and must not be committed.
+
+The upload steps are the local-compatible `linuxScript` variants. They need either a local artifactory/gateway realm matching the assumed archive/process APIs, or the official plugins where the realm already matches.
+
 ## Env vars
 - `FFMPEG_TAG` (default `n9.1`)
 - `FFMPEG_COMMIT_EXPECTED` (default `74e4393595cf2b5857f0da925c4e0dd74ea306e5`)
