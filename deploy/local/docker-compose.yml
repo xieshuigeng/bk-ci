@@ -206,8 +206,9 @@ services:
         cd /etc/bkci && /data/workspace/scripts/render_tpl -m . /data/workspace/templates/gateway*
         # 模板给 HTML 也加了 max-age=2592000，浏览器会长期复用旧的 index.html
         # （内含 localhost:8081 iframe 前缀）。本地环境统一 no-store 保证拿到新页面。
-        sed -i 's|add_header Cache-Control max-age=2592000;|add_header Cache-Control "no-store";|g' /data/workspace/gateway/core/frontend.conf
+        sed -i 's|add_header Cache-Control max-age=2592000;|proxy_hide_header Cache-Control;\n        add_header Cache-Control "no-store";|g' /data/workspace/gateway/core/frontend.conf
         grep -q 'Cache-Control "no-store"' /data/workspace/gateway/core/frontend.conf || { echo 'patch html cache failed' >&2; exit 1; }
+        grep -q 'proxy_hide_header Cache-Control;' /data/workspace/gateway/core/frontend.conf || { echo 'patch html cache hide failed' >&2; exit 1; }
         # 桩页面走同源路径(/iam-stub /itsm-stub /stub), 避免 iframe 硬编码 localhost:8081
         # 在跨机访问时指向浏览器自身而报“拒绝连接”。
         cp /opt/local-gateway/iam-stub-proxy.conf /data/workspace/gateway/core/iam-stub-proxy.conf

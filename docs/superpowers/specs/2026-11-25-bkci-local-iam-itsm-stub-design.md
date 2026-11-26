@@ -169,7 +169,7 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 ## 接线方式（本地部署）
 
 - 新增 `deploy/local/iam-stub/`：`Dockerfile`（多阶段构建，JDK17 运行 Spring Boot fat jar）、`src/`（Kotlin 源码）、`settings.gradle.kts` + `build.gradle.kts`（**完全独立的 Gradle build**，不注册进主 `src/backend/ci/settings.gradle.kts`——该目录不在主 build 树内，且主 build 的 `allprojects` 会套用腾讯 boot 插件带来无关副作用；复用仓库 Gradle 8.10.2 wrapper，用 `gradlew -p` 调用）、`application.yml`（H2 文件库、端口、种子路径）。
-- 新增 `deploy/local/docker-compose.yml` 服务 `iam-stub`：加入 `bkci` 网络，映射宿主端口（建议 IAM 8081 / ITSM 页面 8082，或单端口 8081 用不同路径区分），`environment` 注入 app code/secret、system id、回调地址（`BKCI_CALLBACK_BASE_URL=http://gateway:80`，容器内可达）。浏览器可达的 iframe 前缀必须发布到宿主。
+- 新增 `deploy/local/docker-compose.yml` 服务 `iam-stub`：加入 `bkci` 网络，单端口 8081 用不同路径区分 IAM / ITSM 页面，`environment` 注入 app code/secret、system id、回调地址（`BKCI_CALLBACK_BASE_URL=http://gateway:80`，容器内可达）。宿主 8081 仅供 curl 冒烟；浏览器访问的是网关 `:8080` 上的同源路径（`/iam-stub`、`/itsm-stub`、`/stub`），前缀在渲染后补成 `location.origin + ...`。
 - `deploy/local/bkenv.properties` 在尾部覆盖块设置：`BK_CI_AUTH_PROVIDER=rbac`、`BK_CI_IAM_APIGW_URL=http://iam-stub:8080`（容器间）、`BK_CI_ITSM_APIGW_URL=http://iam-stub:8080`、`BK_CI_IAM_SYSTEM_ID=bk_ci_rbac`、`BK_CI_IAM_MIGRATE_TOKEN=stub-token`、`BK_CI_IAM_URL_PREFIX=/iam-stub`、`BK_CI_ITSM_URL_PREFIX=/itsm-stub`。`frontend/patch-iframe-prefix.sh` 在渲染后把它们改成运行时 `location.origin + ...`；网关把 HTML 的 `Cache-Control` 改为 `no-store` 以免浏览器长期复用旧前缀页面。重新渲染并重建 auth / frontend / gateway 容器使配置生效。
 - 迁移模型（可选）：保留 `support-files/bkiam-rbac/` JSON 作为种子来源；桩实现 `/ping` 与 `/api/v1/model/systems/{id}/query`，允许 `do_migrate.py` 跑通。不强制要求初始化 Job 跑迁移——桩自身读 JSON 文件生成列表即可。
 
@@ -205,6 +205,6 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 
 ## 留给实现者的开放项（可在计划阶段细化）
 
-- 单端口还是双端口暴露 IAM / ITSM 页面（影响 iframe 前缀配置，当前倾向单端口 8081 + 路径区分）。
+- ~~单端口还是双端口暴露 IAM / ITSM 页面~~ 已定：单端口 8081 + 路径区分，且仅用于 curl 冒烟；浏览器走网关同源代理（见「iframe 同源」）。
 - H2 文件路径与 compose volume 命名；种子数据的具体示例条数。
 - fallback：若本地 `rbac` 模式启动因其它 SSO/ESB 依赖报错，记录并按需补最薄的 ESB/登录桩（不在本次范围，作为风险项）。

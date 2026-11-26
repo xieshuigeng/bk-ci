@@ -282,7 +282,7 @@ docker exec -i bkci-mysql mysql -uroot -proot123 devops_ci_auth \
 # 3) 构建并启动桩服务（端口映射 8081:8080，H2 文件卷 iam-stub-data）
 docker compose -f deploy/local/docker-compose.yml up -d --build iam-stub
 
-# 4) 端到端冒烟验收
+# 4) 端到端冒烟验收（宿主机需有 curl + node：node 用于真实执行渲染出的 iframe 前缀表达式）
 bash deploy/local/iam-stub/verify-local.sh
 ```
 
