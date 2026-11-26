@@ -54,7 +54,7 @@ bk-ci auth ──BkHttpRequestService──────────────�
 |---|---|---|---|
 | IAM SDK | `BK_CI_IAM_APIGW_URL` | `auth.apigwUrl` | `http://iam-stub:8080`（容器网内） |
 | ITSM service | `BK_CI_ITSM_APIGW_URL` | `itsm.url` | `http://iam-stub:8080` |
-| 浏览器 iframe | `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` | 前端全局变量 | `http://localhost:8081/iam-stub` / `http://localhost:8081/itsm-stub` |
+| 浏览器 iframe | `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` | 前端全局变量（渲染后补 `location.origin`） | 同源 `/iam-stub` / `/itsm-stub`，由网关代理到桩 |
 
 再加 `BK_CI_AUTH_PROVIDER=rbac` 激活 rbac beans。桩按 IAM SDK 信封（`code:0`）回包，SDK 无感知；无需改 bk-ci 任何 Kotlin 代码。
 
@@ -70,7 +70,8 @@ deploy/local/iam-stub/          ← 新增独立 Kotlin Gradle 子项目
   setup-local-auth.sql          ← 一次性预置 devops_ci_auth（用户已同意）
 deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
   内网 iam-stub:8080  → bk-ci auth 调用
-  宿主 localhost:8081 → 浏览器 iframe 访问
+  网关 /iam-stub /itsm-stub /stub → 浏览器 iframe 同源访问
+  宿主 8081 端口仅用于 curl 冒烟，浏览器不直连
   volume              → H2 文件持久化
 ```
 
@@ -162,14 +163,14 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 ### 前端 iframe 页面
 
 - `GET /apply?system_id=bk_ci_rbac&source=externalApp[&id=...]`：最小 HTML 页，列 **IAM 用户组申请单**（sn、状态、申请人、目标组），提供「通过 / 驳回」按钮，按钮调桩的 IAM `applications/{callbackId}/approve` 或 `cancel`；通过后同时更新桩的两个接口：`/users/{userId}/groups/belong/?group_ids=` 返回 `belong=true`（bk-ci `syncIamGroupMembersOfApply` 用它判断已加入），`/groups/{id}/members/` 返回成员详情（bk-ci `getAllRoleGroupMembersV2` 用它落 `T_AUTH_RESOURCE_GROUP_MEMBER`）。样式可用简单内联 CSS；不需要复刻蓝鲸 UI。
-- `GET /#/ticket/approval-iframe?system_id=bk_ci_rbac&source=externalApp`（hash 路由）：最小 HTML 页，列 **ITSM 项目审批工单**（对应 `T_AUTH_ITSM_CALLBACK` 的 sn），按钮触发上述 ITSM 回调 + IAM approve/cancel。注意前缀应为不带 `#` 的绝对 URL（例如 `http://localhost:8081/itsm-stub/#/ticket/approval-iframe` 由组件拼出，因此配置前缀用 `http://localhost:8081/itsm-stub`）。
+- `GET /#/ticket/approval-iframe?system_id=bk_ci_rbac&source=externalApp`（hash 路由）：最小 HTML 页，列 **ITSM 项目审批工单**（对应 `T_AUTH_ITSM_CALLBACK` 的 sn），按钮触发上述 ITSM 回调 + IAM approve/cancel。注意前缀应为不带 `#` 的绝对 URL：`IAM-Iframe` 用单参 `new URL(prefix + '/' + path)`，相对路径会抛 `Invalid URL`，写死 `localhost` 在跨机访问时会拒绝连接；本地在渲染后把前缀补成 `location.origin + '/itsm-stub'`，运行态得到例如 `http://<访问域名>/itsm-stub/#/ticket/approval-iframe`。
 - 这两个页面是让本地 iframe「有数据且可操作」的关键；若只做 JSON API，iframe 仍白屏。
 
 ## 接线方式（本地部署）
 
 - 新增 `deploy/local/iam-stub/`：`Dockerfile`（多阶段构建，JDK17 运行 Spring Boot fat jar）、`src/`（Kotlin 源码）、`settings.gradle.kts` + `build.gradle.kts`（**完全独立的 Gradle build**，不注册进主 `src/backend/ci/settings.gradle.kts`——该目录不在主 build 树内，且主 build 的 `allprojects` 会套用腾讯 boot 插件带来无关副作用；复用仓库 Gradle 8.10.2 wrapper，用 `gradlew -p` 调用）、`application.yml`（H2 文件库、端口、种子路径）。
 - 新增 `deploy/local/docker-compose.yml` 服务 `iam-stub`：加入 `bkci` 网络，映射宿主端口（建议 IAM 8081 / ITSM 页面 8082，或单端口 8081 用不同路径区分），`environment` 注入 app code/secret、system id、回调地址（`BKCI_CALLBACK_BASE_URL=http://gateway:80`，容器内可达）。浏览器可达的 iframe 前缀必须发布到宿主。
-- `deploy/local/bkenv.properties` 在尾部覆盖块设置：`BK_CI_AUTH_PROVIDER=rbac`、`BK_CI_IAM_APIGW_URL=http://iam-stub:8080`（容器间）、`BK_CI_ITSM_APIGW_URL=http://iam-stub:8080`、`BK_CI_IAM_SYSTEM_ID=bk_ci_rbac`、`BK_CI_IAM_MIGRATE_TOKEN=stub-token`、`BK_CI_IAM_URL_PREFIX=http://localhost:8081/iam-stub`、`BK_CI_ITSM_URL_PREFIX=http://localhost:8081/itsm-stub`。重新渲染并重启 auth / frontend 容器使配置生效。
+- `deploy/local/bkenv.properties` 在尾部覆盖块设置：`BK_CI_AUTH_PROVIDER=rbac`、`BK_CI_IAM_APIGW_URL=http://iam-stub:8080`（容器间）、`BK_CI_ITSM_APIGW_URL=http://iam-stub:8080`、`BK_CI_IAM_SYSTEM_ID=bk_ci_rbac`、`BK_CI_IAM_MIGRATE_TOKEN=stub-token`、`BK_CI_IAM_URL_PREFIX=/iam-stub`、`BK_CI_ITSM_URL_PREFIX=/itsm-stub`。`frontend/patch-iframe-prefix.sh` 在渲染后把它们改成运行时 `location.origin + ...`；网关把 HTML 的 `Cache-Control` 改为 `no-store` 以免浏览器长期复用旧前缀页面。重新渲染并重建 auth / frontend / gateway 容器使配置生效。
 - 迁移模型（可选）：保留 `support-files/bkiam-rbac/` JSON 作为种子来源；桩实现 `/ping` 与 `/api/v1/model/systems/{id}/query`，允许 `do_migrate.py` 跑通。不强制要求初始化 Job 跑迁移——桩自身读 JSON 文件生成列表即可。
 
 ## 数据模型（桩私有库）

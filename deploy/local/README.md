@@ -264,8 +264,11 @@ cat deploy/local/iam-stub/bkenv-iam-stub.env >> deploy/local/bkenv.properties
 # 改配置后必须先渲染后端配置（后端只读 rendered/etc/ci，不读 bkenv.properties）
 REPO=$(git rev-parse --show-toplevel)
 cd "$REPO/deploy/local"
+# 注意 glob 不能加引号：render_tpl 需要 shell 展开后的文件列表，
+# 引号会让 *.yml 变成字面量并静默渲染出 0 个文件。
 ./render_tpl -u -p "$PWD/rendered" -m . -e "$PWD/bkenv.properties" \
-  "$REPO/support-files/templates/#etc#ci#*.yml"
+  "$REPO"/support-files/templates/#etc#ci#*.yml
+grep -q 'idProvider: rbac' rendered/etc/ci/common.yml || { echo 'render failed: idProvider is not rbac' >&2; exit 1; }
 cd "$REPO"
 # 再重建读取配置的容器
 docker compose -f deploy/local/docker-compose.yml up -d --force-recreate --no-deps frontend gateway auth project

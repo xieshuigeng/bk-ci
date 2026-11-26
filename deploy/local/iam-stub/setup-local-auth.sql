@@ -3,7 +3,11 @@
 -- 项目代码从 devops_ci_project.T_PROJECT 读取（本地默认为 demotest），避免硬编码不存在的项目。
 -- RELATION_ID 必须等于 IAM 桩种子组 id（10001），用户组申请链据此关联成员表。
 
-SET @project_code = (SELECT english_name FROM devops_ci_project.T_PROJECT WHERE deleted_at IS NULL ORDER BY ID LIMIT 1);
+-- 优先选冒烟脚本固定使用的 demotest，避免其它项目 ID 更小时把数据种到错误项目。
+SET @project_code = COALESCE(
+  (SELECT english_name FROM devops_ci_project.T_PROJECT WHERE english_name = 'demotest' AND deleted_at IS NULL ORDER BY ID LIMIT 1),
+  (SELECT english_name FROM devops_ci_project.T_PROJECT WHERE deleted_at IS NULL ORDER BY ID LIMIT 1)
+);
 
 -- 清理旧版脚本留下的孤立项目行，避免同一 RELATION_ID 出现在两个项目下。
 DELETE FROM T_AUTH_RESOURCE_GROUP

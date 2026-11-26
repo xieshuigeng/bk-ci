@@ -7,10 +7,13 @@ src_dir=/opt/local-auth-patch/src/main/java
 work_dir=/tmp/local-auth-user-patch
 patch_jar=/data/workspace/auth/lib/local-auth-user-patch.jar
 
+command -v javac >/dev/null || { echo 'javac not found in auth image' >&2; exit 1; }
+
 rm -rf "$work_dir"
 mkdir -p "$work_dir/classes"
+# 源码含中文注释；不指定 -encoding 时 javac 会按 locale（镜像默认 US-ASCII）解析并报大量 unmappable character。
 # shellcheck disable=SC2046
-javac -cp '/data/workspace/auth/lib/*' -d "$work_dir/classes" $(find "$src_dir" -name '*.java')
+javac -encoding UTF-8 -cp '/data/workspace/auth/lib/*' -d "$work_dir/classes" $(find "$src_dir" -name '*.java')
 jar cf "$patch_jar" -C "$work_dir/classes" .
 echo "installed local auth patch: $patch_jar"
 

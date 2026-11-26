@@ -41,6 +41,7 @@ echo "PASS: gateway user API"
 
 echo "== 6/10 项目列表含本地预置项目 =="
 echo "$gw_body" | grep -Eq '"PROJECT_CODE":"[^"]+"|"projectCode":"[^"]+"' || fail "project list empty: $gw_body"
+echo "$gw_body" | grep -q 'demotest' || fail "project list missing seeded project demotest: $gw_body"
 echo "PASS: project list"
 
 echo "== 7/10 申请权限接口返回用户组（用户信息已同步）=="
@@ -58,14 +59,22 @@ for p in /iam-stub/apply /itsm-stub/; do
 done
 echo "PASS: same-origin iframes"
 
-echo "== 9/10 前端 iframe 前缀为运行时同源绝对地址 =="
-# IAM-Iframe 组件用 new URL(urlPerfix + path)，只接受绝对 URL；
+echo "== 9/10 前端 iframe 前缀在浏览器中解析为同源绝对地址 =="
+# IAM-Iframe 组件用 new URL(urlPerfix + '/' + path)，只接受绝对 URL；
 # 相对路径会抛 Invalid URL，写死 localhost 会在跨机访问时拒绝连接。
-for p in /permission/my-approval /console/permission/my-approval; do
-  html=$(curl -fsS "http://localhost:8080$p") || fail "frontend page unreachable: $p"
-  echo "$html" | grep -q 'location.origin' || fail "$p iframe prefix is not runtime same-origin: $(echo "$html" | grep -oE 'BK_(IAM|ITSM)_URL_PREFIX[^,;}]{0,60}' | head -2)"
-  echo "$html" | grep -q 'localhost:8081' && fail "$p still hardcodes localhost:8081"
-done
+# 这里用 node 真实执行渲染出的前缀表达式并构造 iframe URL，而非只匹配字符串。
+check_prefix() {
+  page="$1"; var="$2"; iframe_path="$3"; expect_path="$4"
+  html=$(curl -fsS "http://localhost:8080$page") || fail "frontend page unreachable: $page"
+  echo "$html" | grep -q 'localhost:8081' && fail "$page still hardcodes localhost:8081"
+  expr=$(echo "$html" | grep -oE "$var *= *[^,;}<]+" | head -1 | sed "s/^$var *= *//")
+  [ -n "$expr" ] || fail "$page missing $var"
+  node -e "global.location={origin:'http://example.test:8088'}; const p=$expr; const u=new URL(p + '/' + '$iframe_path'); if (u.origin !== 'http://example.test:8088' || !u.pathname.startsWith('$expect_path')) { console.error(u.href); process.exit(1); }" \
+    || fail "$page $var does not build a same-origin absolute iframe URL: $expr"
+}
+check_prefix /permission/my-approval BK_ITSM_URL_PREFIX '#/ticket/approval-iframe' /itsm-stub/
+check_prefix /permission/my-apply BK_IAM_URL_PREFIX '' /iam-stub/
+check_prefix /console/permission/my-approval BK_IAM_URL_PREFIX '' /iam-stub/
 echo "PASS: runtime same-origin prefixes"
 
 echo "== 10/10 HTML 不缓存（避免旧 localhost 前缀被浏览器复用）=="
