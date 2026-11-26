@@ -15,12 +15,13 @@ class IframePageController(
 
     @GetMapping("/iam-stub/apply", produces = ["text/html;charset=UTF-8"])
     fun applyPage(): String {
-        val rows = applicationRepo.findByStatus("PENDING").joinToString("\n") { app ->
+        val rows = applicationRepo.findAll().sortedBy { it.id }.joinToString("\n") { app ->
+            val disabled = if (app.status == "PENDING") "" else " disabled"
             """
             <tr>
               <td>${esc(app.sn)}</td><td>${esc(app.applicant)}</td><td>${esc(app.groupIds)}</td><td>${esc(app.status)}</td>
-              <td><button onclick="approve(${app.id}, true)">通过</button>
-                  <button onclick="approve(${app.id}, false)">驳回</button></td>
+              <td><button onclick="approve(${app.id}, true)"$disabled>通过</button>
+                  <button onclick="approve(${app.id}, false)"$disabled>驳回</button></td>
             </tr>
             """.trimIndent()
         }
@@ -45,11 +46,12 @@ class IframePageController(
     )
     fun approvalPage(): String {
         val rows = ticketRepo.findAll().joinToString("\n") { ticket ->
+            val disabled = if (ticket.status == "RUNNING") "" else " disabled"
             """
             <tr>
               <td>${esc(ticket.sn)}</td><td>${esc(ticket.status)}</td>
-              <td><button onclick="approve('${esc(ticket.sn)}', true)">通过</button>
-                  <button onclick="approve('${esc(ticket.sn)}', false)">驳回</button></td>
+              <td><button onclick="approve('${esc(ticket.sn)}', true)"$disabled>通过</button>
+                  <button onclick="approve('${esc(ticket.sn)}', false)"$disabled>驳回</button></td>
             </tr>
             """.trimIndent()
         }
@@ -61,7 +63,7 @@ class IframePageController(
               fetch('/itsm-stub/api/approve', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({sn: sn, approved: ok, callbackUrl: ''})
+                body: JSON.stringify({sn: sn, approved: ok})
               }).then(function(r) { return r.json(); }).then(function() { location.reload(); });
             }
             """

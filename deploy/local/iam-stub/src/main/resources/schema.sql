@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS "stub_application" (
     applicant VARCHAR(255),
     status VARCHAR(32),
     callback_id INT,
-    approve_result VARCHAR(16)
+    approve_result VARCHAR(16),
+    external_callback_id VARCHAR(64)
 );
 
 CREATE TABLE IF NOT EXISTS "stub_ticket" (
@@ -34,5 +35,12 @@ CREATE TABLE IF NOT EXISTS "stub_ticket" (
     status VARCHAR(32),
     token VARCHAR(64),
     callback_id INT,
-    apply_id INT
+    apply_id INT,
+    external_callback_id VARCHAR(64),
+    callback_url VARCHAR(1024)
 );
+
+-- 兼容已挂载 iam-stub-data 卷的旧表结构，H2 的 ADD COLUMN IF NOT EXISTS 支持重复执行。
+ALTER TABLE "stub_application" ADD COLUMN IF NOT EXISTS external_callback_id VARCHAR(64);
+ALTER TABLE "stub_ticket" ADD COLUMN IF NOT EXISTS external_callback_id VARCHAR(64);
+ALTER TABLE "stub_ticket" ADD COLUMN IF NOT EXISTS callback_url VARCHAR(1024);

@@ -22,6 +22,20 @@ class IamManagementController(private val groupState: GroupStateService) {
         @RequestBody(required = false) body: Map<String, Any>?
     ): ResponseEnvelope<Map<String, Int>> = ResponseEnvelope.ok(mapOf("id" to 1001))
 
+    // IAM SDK 的 getGradeManagerDetail 请求无尾斜杠路径；批准回调后会读 members/description 更新管理员。
+    @GetMapping("/grade_managers/{id}")
+    fun getGradeManagerDetail(@PathVariable id: Int): ResponseEnvelope<Map<String, Any>> =
+        ResponseEnvelope.ok(
+            mapOf(
+                "id" to id,
+                "name" to "stub-manager",
+                "description" to "local iam stub grade manager",
+                "creator" to "admin",
+                "members" to (groupState.allUserMembers() + "demo").distinct(),
+                "sync_perm" to false
+            )
+        )
+
     @GetMapping("/grade_managers/{id}/")
     fun getGradeManager(@PathVariable id: Int): ResponseEnvelope<Map<String, Any>> =
         ResponseEnvelope.ok(mapOf("id" to id, "name" to "stub-manager"))

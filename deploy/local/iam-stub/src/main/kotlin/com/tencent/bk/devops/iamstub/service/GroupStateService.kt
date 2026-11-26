@@ -56,6 +56,9 @@ class GroupStateService(
 
     fun listMembers(groupId: Int): List<StubMember> = memberRepo.findByGroupId(groupId)
 
+    fun allUserMembers(): List<String> =
+        memberRepo.findAll().filter { it.type == "USER" }.map { it.memberId }.distinct()
+
     fun detailOf(groupId: Int): Map<String, Any> {
         val group: StubGroup? = groupRepo.findById(groupId).orElse(null)
         val members = listMembers(groupId)

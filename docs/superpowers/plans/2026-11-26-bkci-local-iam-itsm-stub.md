@@ -17,7 +17,7 @@
 - IAM 响应信封：`{"code":0,"message":"OK","result":true,"data":...}`；`code` 必须是 **JSON 数值** 0（SDK 调用 `Long.longValue()`），不能是字符串。
 - 系统 ID 固定 `bk_ci_rbac`；app code `bk_ci`；app secret 用本地已有值 `c28aee9ca65c1719d168bdc8de6b1d77`（本地开发值，不新增凭据）。
 - 回调地址默认 `http://gateway:80`（容器网内可达）；**禁止**硬编码 `http://localhost:8080`。
-- `sn = STUB-<递增整数>`；`callbackId` 与该整数同值；`role_id` 取 grade manager id。
+- `sn = STUB-<递增整数>`；`callbackId` 是 bk-ci 传入的 UUID 字符串，桩原样保存并按它定位单据；响应 `id` 为桩的自增整数，`role_id` 取 grade manager id。
 - 取消类接口 message：`PUT .../applications/{callbackId}/cancel/` 必须 `"OK"`；ITSM `POST /operate_ticket/` 必须 `"success"`。
 - 更新子集管理员是 `POST /.../subset_managers/{id}`（**无尾斜杠**），不是 PUT。
 - 桩服务运行时绝不写 `devops_ci_auth`；仅允许 `setup-local-auth.sql` 一次性预置。
@@ -31,7 +31,7 @@
 2. 更新子集管理员用 PUT 或带尾斜杠 → SDK 404。Task 4 测试用 `post("/.../subset_managers/2001")` 断言 200。
 3. `belong` 判定与 `members` 列表不一致 → 成员同步判成功却落不了库。Task 4 测试断言审批后 `belong=true` 且 `/groups/{id}/members/` 含同一成员。
 4. 回调地址取到 `http://localhost:8080` → 桩容器内不可达，审批链断。Task 6 测试用 MockRestServiceServer 断言实际请求 URL 以 `http://gateway:80` 开头。
-5. `sn`/`callbackId`/`role_id` 形状或取值错 → bk-ci 按 sn 查不到回调行。Task 5 测试断言 `{id,sn}`、`{id,role_id}` 三字段精确值。
+5. `sn`/`callbackId`/`role_id` 形状或取值错 → bk-ci 按 sn 查不到回调行。Task 5 测试断言 `{id,sn}`、`{id,role_id}` 三字段精确值；UUID 形式的 `callbackId` 必须能走通 approve/cancel（见 Task 8 复核测试）。
 
 ## 本计划不实现（来自 spec 的有意排除）
 
@@ -130,7 +130,7 @@ git commit -m "feat(iam-stub): bootstrap independent Gradle build and response e
 
 **Interfaces:**
 - Consumes: `IamStubApplication`（Task 1）、`ResponseEnvelope`（Task 1）。
-- Produces: `StubGroup(@Id val id: Int, val name: String, val description: String, val project: String)`、`StubMember(@Id val id: Long? = null, val groupId: Int, val type: String, val memberId: String, val expiredAt: Long)`、`StubApplication(@Id val id: Int? = null, val sn: String, val groupIds: String, val applicant: String, val status: String, val callbackId: Int, val approveResult: String?)`、`StubGradeManager(@Id val id: Int, val name: String, val project: String)`、`StubTicket(@Id val sn: String, val status: String, val token: String, val callbackId: Int, val applyId: Int)`。
+- Produces: `StubGroup(@Id val id: Int, val name: String, val description: String, val project: String)`、`StubMember(@Id val id: Long? = null, val groupId: Int, val type: String, val memberId: String, val expiredAt: Long)`、`StubApplication(@Id val id: Int? = null, val sn: String, val groupIds: String, val applicant: String, val status: String, val callbackId: Int, val approveResult: String?, val externalCallbackId: String?)`、`StubGradeManager(@Id val id: Int, val name: String, val project: String)`、`StubTicket(@Id val sn: String, val status: String, val token: String, val callbackId: Int, val applyId: Int, val externalCallbackId: String?, val callbackUrl: String?)`。
 - Produces: `StubRepositories.kt` 暴露 Spring Data JDBC 接口 `GroupRepo`、`MemberRepo`、`ApplicationRepo`、`GradeManagerRepo`、`TicketRepo`，各自继承 `CrudRepository<T, ID>`。
 - Produces: `object Ids { fun next(): Int }`（`AtomicInteger` 从 1 起）；`fun snOf(n: Int) = "STUB-$n"`。
 - Produces: `class SeedLoader(@Value("\${stub.seed-path}") private val seedPath: String, ...)`：`ApplicationRunner`，若 `seedPath` 非空且目录存在则从 `0003~0007*.json` 解析出 grade manager / group 种子，否则用内置示例（1 个 grade manager id=1001、2 个 group id=10001/10002、2 个 member）。种子必须幂等。
@@ -156,7 +156,7 @@ Expected: FAIL，`Unresolved reference: SeedLoader` 或 `groupRepo` 未定义。
 
 - [x] **Step 3: 实现 schema、实体、Repository、SeedLoader**
 
-`schema.sql` 建 5 张表：`stub_grade_manager(id INT PK, name, project)`、`stub_group(id INT PK, name, description, project)`、`stub_member(id BIGINT AUTO_INCREMENT PK, group_id INT, type VARCHAR(32), member_id VARCHAR(255), expired_at BIGINT)`、`stub_application(id INT AUTO_INCREMENT PK, sn VARCHAR(64), group_ids VARCHAR(512), applicant VARCHAR(255), status VARCHAR(32), callback_id INT, approve_result VARCHAR(16))`、`stub_ticket(sn VARCHAR(64) PK, status VARCHAR(32), token VARCHAR(64), callback_id INT, apply_id INT)`。全部 `CREATE TABLE IF NOT EXISTS`。
+`schema.sql` 建 5 张表：`stub_grade_manager(id INT PK, name, project)`、`stub_group(id INT PK, name, description, project)`、`stub_member(id BIGINT AUTO_INCREMENT PK, group_id INT, type VARCHAR(32), member_id VARCHAR(255), expired_at BIGINT)`、`stub_application(id INT AUTO_INCREMENT PK, sn VARCHAR(64), group_ids VARCHAR(512), applicant VARCHAR(255), status VARCHAR(32), callback_id INT, approve_result VARCHAR(16), external_callback_id VARCHAR(64))`、`stub_ticket(sn VARCHAR(64) PK, status VARCHAR(32), token VARCHAR(64), callback_id INT, apply_id INT, external_callback_id VARCHAR(64), callback_url VARCHAR(1024))`。全部 `CREATE TABLE IF NOT EXISTS`；新增列用 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` 兼容已挂载旧卷。
 `SeedLoader` 用 Jackson `ObjectMapper` 读目录，JSON 里取 `operations[].operation` 与 `data.id/name`；解析失败时降级到内置示例并打日志，不让启动失败。
 
 - [x] **Step 4: 跑测试确认通过**
@@ -320,13 +320,14 @@ git commit -m "feat(iam-stub): implement IAM management, members and belong APIs
 - Produces: `class ApplicationService(...)`：
   - `fun createGroupApplication(body: Map<String,Any>): List<Int>`
   - `fun createGradeManagerApplication(body: Map<String,Any>): Pair<Int,String>`（返回 `id to sn`）
-  - `fun approve(callbackId: Int, body: Map<String,Any>): Pair<Int,Int>`（返回 `id to roleId`，`roleId` 取对应 grade manager id；同时把成员写入 group、把 ticket/application 置为通过）
-  - `fun cancel(callbackId: Int): Boolean`
+  - `fun approve(callbackId: String, body: Map<String,Any>): Pair<Int,Int>`（按 bk-ci 传入的 UUID / sn / 数字 id 定位单据；返回 `id to roleId`，`roleId` 取对应 grade manager id；同时把成员写入 group、把 ticket/application 置为通过）
+  - `fun cancel(callbackId: String): Boolean`
+  - `fun callbackUrlOf(externalCallbackId: String): String?`（读取创建工单时保存的回调地址）
 - Produces: `IamApplicationController` 端点（前缀同 Task 4）：
   - `POST /groups/-/applications/` → `data={"ids":[n]}`
   - `POST /grade_managers/-/applications/` 与 `POST /grade_managers/{id}/applications/` → `data={"id":n,"sn":"STUB-n"}`
-  - `POST /applications/{callbackId}/approve/` → `data={"id":n,"role_id":m}`
-  - `PUT /applications/{callbackId}/cancel/` → `ResponseEnvelope(message="OK", data=null)`
+  - `POST /applications/{callbackId}/approve/`（`callbackId` 为 String，真实 bk-ci 传 UUID）→ `data={"id":n,"role_id":m}`
+  - `PUT /applications/{callbackId}/cancel/`（String）→ `ResponseEnvelope(message="OK", data=null)`
   - `POST /groups/-/renew/applications/` → `data={}`
 - 本任务**不触发** ITSM 回调；回调编排在 Task 6。
 
@@ -360,7 +361,7 @@ Expected: FAIL，404 或 bean 未定义。
 
 - [x] **Step 3: 实现 `ApplicationService` 与 `IamApplicationController`**
 
-`createGradeManagerApplication` 用 `Ids.next()` 分配 id/callbackId，`snOf(n)` 生成 sn，写 `stub_ticket`（status=RUNNING，token 固定 `stub-token`）与 `stub_application`。`approve` 按 callbackId 查 ticket/application，调 `GroupStateService.addMember` 写入申请人，更新 status=APPROVED，`role_id` 返回 1001（种子 grade manager id）。`cancel` 更新 status=CANCELLED 并返回 `message="OK"` 的信封。
+`createGradeManagerApplication` 用 `Ids.next()` 分配 id，`snOf(n)` 生成 sn，原样保存 bk-ci 传入的 `callback_id`（UUID）与 `callback_url`，写 `stub_ticket`（status=RUNNING，token 固定 `stub-token`）与 `stub_application`。`approve` 按 UUID / sn / 数字 id 查 ticket/application，调 `GroupStateService.addMember` 写入申请人，更新 status=APPROVED，`role_id` 返回 1001（种子 grade manager id）。`cancel` 更新 status=CANCELLED 并返回 `message="OK"` 的信封。
 
 - [x] **Step 4: 跑测试确认通过**
 
@@ -397,7 +398,7 @@ git commit -m "feat(iam-stub): implement application create, approve and cancel"
   - body 字段：`title,current_status,sn,ticket_url,update_at,updated_by,approve_result("true"/"false"),token,last_approver`。
   - `token` 取 `stub_ticket.token`（与 `/token/verify/` 一致）。
 - Produces: `StubApprovalController`：
-  - `POST /itsm-stub/api/approve`（body `{"sn":"STUB-n","approved":true,"callbackUrl":""|null}`）→ 查 ticket 得 callbackId → `applicationService.approve(callbackId, mapOf("sn" to sn))` → `itsmCallbackService.notifyApproval(...)` → `data={"ok":true}`
+  - `POST /itsm-stub/api/approve`（body `{"sn":"STUB-n","approved":true,"callbackUrl":""|null}`）→ 查 ticket 得 callbackId（UUID）→ `approved=true` 时 `applicationService.approve(...)`，`false` 时 `applicationService.cancel(...)` → `itsmCallbackService.notifyApproval(...)`（callbackUrl 为空则用创建工单时保存的地址）→ `data={"ok":true}`
   - `POST /stub/api/approve-group`（body `{"id":n,"approved":true}`）→ `applicationService.approve(n, ...)` → `data={"ok":true}`（用户组链，不回调 ITSM）
 
 - [x] **Step 1: 写失败测试**
@@ -541,7 +542,7 @@ EXPOSE 8080
 ENV STUB_SEED_PATH=/app/support-files/bkiam-rbac
 ENTRYPOINT ["java", "-jar", "iam-stub.jar"]
 ```
-`setup-local-auth.sql`：插入测试项目 `stub-demo` 对应的 `T_AUTH_RESOURCE_GROUP` 行，`relation_id` 必须等于桩种子 group id `10001`；SQL 只写 `devops_ci_auth`，不写任何其它库，且用 `INSERT ... WHERE NOT EXISTS` 幂等。
+`setup-local-auth.sql`：从本地已有 `devops_ci_project.T_PROJECT` 读取项目英文代号（默认 `demotest`），插入对应的 `T_AUTH_RESOURCE_GROUP` 行，`relation_id` 必须等于桩种子 group id `10001`；SQL 只写 `devops_ci_auth`，不写任何其它库，且用 `INSERT ... WHERE NOT EXISTS` 幂等。
 `docker-compose.yml` 与 `bkenv.properties` 按 Interfaces 精确修改；`README.md` 说明「重建 frontend/auth 容器 → 执行 setup SQL → `docker compose up -d --build iam-stub` → 跑 verify-local.sh」。
 
 - [x] **Step 4: 跑脚本确认通过并做静态检查**

@@ -21,11 +21,17 @@ class StubApprovalController(
         val approved = payload["approved"] as? Boolean ?: true
         val ticket = ticketRepo.findById(sn).orElse(null)
         if (ticket != null) {
-            applications.approve(ticket.callbackId, payload)
+            val callbackId = ticket.externalCallbackId ?: ticket.callbackId.toString()
+            if (approved) {
+                applications.approve(callbackId, payload + mapOf("sn" to sn))
+            } else {
+                applications.cancel(callbackId)
+            }
             itsmCallbacks.notifyApproval(
                 sn = sn,
                 approved = approved,
-                callbackUrl = payload["callbackUrl"]?.toString(),
+                // 页面按钮不传 callbackUrl，此时用 bk-ci 创建工单时传入并落库的地址。
+                callbackUrl = payload["callbackUrl"]?.toString()?.takeIf { it.isNotBlank() } ?: ticket.callbackUrl,
                 applicant = payload["applicant"]?.toString() ?: "demo",
                 lastApprover = payload["lastApprover"]?.toString() ?: "admin"
             )
@@ -39,7 +45,9 @@ class StubApprovalController(
         val id = (payload["id"] as? Number)?.toInt() ?: return ResponseEnvelope.ok(mapOf("ok" to false))
         val approved = payload["approved"] as? Boolean ?: true
         if (approved) {
-            applications.approve(id, payload)
+            applications.approve(id.toString(), payload)
+        } else {
+            applications.cancel(id.toString())
         }
         return ResponseEnvelope.ok(mapOf("ok" to true))
     }

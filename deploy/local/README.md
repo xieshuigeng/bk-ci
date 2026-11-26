@@ -261,6 +261,7 @@ cat deploy/local/iam-stub/bkenv-iam-stub.env >> deploy/local/bkenv.properties
 docker compose -f deploy/local/docker-compose.yml up -d --force-recreate --no-deps frontend gateway auth project
 
 # 2) 一次性预置本地 devops_ci_auth 测试数据（幂等，可重复执行）
+#    脚本从本地已有项目（默认 demotest）读取项目代号，无需先建 stub-demo 项目
 docker exec -i bkci-mysql mysql -uroot -proot123 devops_ci_auth \
   < deploy/local/iam-stub/setup-local-auth.sql
 
@@ -273,7 +274,7 @@ bash deploy/local/iam-stub/verify-local.sh
 
 ### 两条验收链
 
-1. **用户组申请**：在「申请权限」页提交加入种子组 `10001` → 「我的申请」iframe 出现 `STUB-n` → 点「通过」 → 等待 `syncIamGroupMembersOfApply` 定时同步 → MySQL 中 `T_AUTH_RESOURCE_GROUP_MEMBER` 出现该用户，`T_AUTH_RESOURCE_GROUP_APPLY.STATUS='SUCCEED'`。
-2. **项目审批**：创建项目 → 「我的审批」iframe 出现 `STUB-n` → 点「通过」 → 桩回调 bk-ci `/ms/auth/api/external/auth/itsm/create_callback` → MySQL 中 `T_AUTH_ITSM_CALLBACK.APPROVE_RESULT` 更新，项目资源与默认组创建完成。
+1. **用户组申请**：在本地已有项目（默认 `demotest`）的「申请权限」页提交加入种子组 `10001` → 「我的申请」iframe 出现 `STUB-n` → 点「通过」 → 等待 `syncIamGroupMembersOfApply` 定时同步 → MySQL 中 `T_AUTH_RESOURCE_GROUP_MEMBER` 出现该用户，`T_AUTH_RESOURCE_GROUP_APPLY.STATUS='SUCCEED'`。点「驳回」则单据变为 `CANCELLED`，不会同步成员。
+2. **项目审批**：创建项目 → 「我的审批」iframe 出现 `STUB-n` → 点「通过」 → 桩回调 bk-ci `/ms/auth/api/external/auth/itsm/create_callback` → MySQL 中 `T_AUTH_ITSM_CALLBACK.APPROVE_RESULT` 更新，项目资源与默认组创建完成。「驳回」会走 cancel 并发 `approve_result=false` 回调。
 
-回调地址优先取 bk-ci 请求传入的 callbackUrl，为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）；桩日志可见 `/applications/{callbackId}/approve` 调用。
+回调地址优先取 bk-ci 创建工单时传入并落库的 `callback_url`（`localhost`/`127.0.0.1` 会在容器内失效，自动忽略），为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）。bk-ci 传入的 `callbackId` 是 UUID，桩原样保存并用它定位单据；桩日志可见 `/applications/{callbackId}/approve` 调用。`verify-local.sh` 仅做 HTTP 冒烟，两条链的落库结果需按上表在 MySQL 手工核对。

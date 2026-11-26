@@ -21,7 +21,11 @@ class ItsmCallbackService(
         applicant: String,
         lastApprover: String
     ) {
-        val target = callbackUrl?.takeIf { it.isNotBlank() }
+        // 回调用容器网可达地址；localhost/127.0.0.1 在容器内不指向 bk-ci，直接回退到 baseUrl。
+        val explicit = callbackUrl?.takeIf {
+            it.isNotBlank() && !it.contains("localhost") && !it.contains("127.0.0.1")
+        }
+        val target = explicit
             ?: "$baseUrl/ms/auth/api/external/auth/itsm/" +
                 if (approved) "create_callback" else "update_callback"
         val token = ticketRepo.findById(sn).orElse(null)?.token ?: "stub-token"

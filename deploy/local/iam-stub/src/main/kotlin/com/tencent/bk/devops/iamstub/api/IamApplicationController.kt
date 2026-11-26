@@ -41,7 +41,7 @@ class IamApplicationController(private val applications: ApplicationService) {
     @PostMapping("/applications/{callbackId}/approve/")
     fun approveApplication(
         @PathVariable system: String,
-        @PathVariable callbackId: Int,
+        @PathVariable callbackId: String,
         @RequestBody(required = false) body: Map<String, Any>?
     ): ResponseEnvelope<Map<String, Int>> {
         val (id, roleId) = applications.approve(callbackId, body ?: emptyMap())
@@ -51,7 +51,7 @@ class IamApplicationController(private val applications: ApplicationService) {
     @PutMapping("/applications/{callbackId}/cancel/")
     fun cancelApplication(
         @PathVariable system: String,
-        @PathVariable callbackId: Int
+        @PathVariable callbackId: String
     ): ResponseEnvelope<Any?> {
         applications.cancel(callbackId)
         return ResponseEnvelope(message = "OK", data = null)

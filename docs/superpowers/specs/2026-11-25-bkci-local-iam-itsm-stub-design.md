@@ -137,7 +137,7 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 - 成员：`POST .../groups/{groupId}/members/`、`GET .../groups/{groupId}/members/`（`{"count","results":[RoleGroupMemberInfo]}`）、`DELETE .../groups/{groupId}/members/?type=&ids=`、`PUT .../groups/{groupId}/members/-/expired_at/`、`POST .../groups/-/renew/applications/`。
 - 归属校验：`GET .../users/{userId}/groups/belong/?group_ids=`、`GET .../departments/{deptId}/groups/belong/?group_ids=`、`GET .../group_member_types/{type}/members/{memberId}/groups/-/details/?group_ids=`。其中 `verifyGroupValidMember`（users/belong → `{"<groupId>":{"belong":true,...}}`）是用户组申请链判定成员生效的入口，必须与 `/groups/{id}/members/` 的审批结果一致。
 - 申请：`POST .../groups/-/applications/` → `{"ids":[...]}`；审批 `POST .../applications/{callbackId}/approve/` → `{"id","role_id"}`；取消 `PUT .../applications/{callbackId}/cancel/` → `message` 必须为 `"OK"`。
-  - **精确响应形状（builder review 补齐）**：`ApplicationVO` 只有 `ids`；`GradeManagerApplicationResponse` = `{id:int, sn:string}`，id/sn 由桩生成并回写 `STUB_APPLICATION`，bk-ci 会把它们存进 `T_AUTH_ITSM_CALLBACK.APPLY_ID/SN`；`CallbackApplicationResponese`（SDK 原拼写）= `{id:int, role_id:int}`，`role_id` 取对应 grade manager 的 id，bk-ci 用它驱动组创建。`sn` 用 `STUB-<递增整数>`，`callbackId` 与递增整数同值，保证回调按 sn 能查回同一行。
+  - **精确响应形状（builder review 补齐）**：`ApplicationVO` 只有 `ids`；`GradeManagerApplicationResponse` = `{id:int, sn:string}`，id/sn 由桩生成并回写 `STUB_APPLICATION`，bk-ci 会把它们存进 `T_AUTH_ITSM_CALLBACK.APPLY_ID/SN`；`CallbackApplicationResponese`（SDK 原拼写）= `{id:int, role_id:int}`，`role_id` 取对应 grade manager 的 id，bk-ci 用它驱动组创建。`sn` 用 `STUB-<递增整数>`；`callbackId` 是 bk-ci 生成并随申请传入的 UUID 字符串（见 `PermissionGradeManagerService.kt` 的 `UUIDUtil.generate()`），桩必须原样落库并在 approve/cancel 时用它定位单据；响应 `id` 仍是桩的自增整数，`role_id` 取 grade manager id。bk-ci 按 sn 查回调行，两条信息都要保留。
 - 模板：`GET .../grade_managers/{id}/subject_templates/`、`GET .../groups/{groupId}/subject_templates/`（可先返回 `{"count":0,"results":[]}`）。
 
 ### IAM 迁移接口（仅当启用迁移链路时；默认可返回 ok 壳）
@@ -171,11 +171,11 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 
 ## 数据模型（桩私有库）
 
-最小表（H2）：`STUB_GROUP(id,name,description,project)`、`STUB_MEMBER(group_id,type,id,expired_at)`、`STUB_APPLICATION(id,sn,group_ids,applicant,status,callback_id,approve_result)`、`STUB_GRADE_MANAGER(id,name,project)`、`STUB_TICKET(sn,status,token)`。种子：启动时读 `support-files/bkiam-rbac/0003~0007*.json`，至少插入若干示例 grade manager / group / member，使列表页非空；action/resource_type 列表从 0005/0003 解析供校验用。
+最小表（H2）：`STUB_GROUP(id,name,description,project)`、`STUB_MEMBER(group_id,type,id,expired_at)`、`STUB_APPLICATION(id,sn,group_ids,applicant,status,callback_id,approve_result,external_callback_id)`、`STUB_GRADE_MANAGER(id,name,project)`、`STUB_TICKET(sn,status,token,callback_id,apply_id,external_callback_id,callback_url)`。`external_callback_id` 保存 bk-ci 的 UUID，`callback_url` 保存创建工单时传入的回调地址。种子：启动时读 `support-files/bkiam-rbac/0003~0007*.json`，至少插入若干示例 grade manager / group / member，使列表页非空；action/resource_type 列表从 0005/0003 解析供校验用。
 
 ## 本地测试前置（一次性 setup SQL）
 
-用户已确认允许为本地测试预置 `devops_ci_auth`，但**桩服务运行时仍不写该库**，预置是一次性人工/脚本动作，不提交运行态数据。新增 `deploy/local/iam-stub/setup-local-auth.sql`：插入至少一个测试项目（英文代号如 `stub-demo`）及对应的 `T_AUTH_RESOURCE_GROUP` 映射行，其中 IAM 组 ID 必须与桩种子 group id 一致，否则 `syncIamGroupMembersOfApply` 找不到对应行。
+用户已确认允许为本地测试预置 `devops_ci_auth`，但**桩服务运行时仍不写该库**，预置是一次性人工/脚本动作，不提交运行态数据。新增 `deploy/local/iam-stub/setup-local-auth.sql`：从本地已有的 `devops_ci_project.T_PROJECT` 读取项目英文代号（默认 `demotest`），插入对应的 `T_AUTH_RESOURCE_GROUP` 映射行，其中 IAM 组 ID 必须与桩种子 group id `10001` 一致，否则 `syncIamGroupMembersOfApply` 找不到对应行；脚本幂等，重复执行不产生重复行。
 
 两条链的观察点各自明确：
 
@@ -197,7 +197,7 @@ deploy/local/docker-compose.yml ← 新增服务 iam-stub，加入 bkci 网络
 - **两条链都做最小闭环（用户确认）**：IAM 用户组申请链与 ITSM 项目审批链各有独立页面、独立落库观察点，不用一条链冒充另一条。
 - **允许一次性 setup SQL 预置 `devops_ci_auth`（用户确认）**：仅作为本地测试前置，桩服务运行时绝不写该库；提交物只包含 setup SQL 脚本，不包含运行态数据。
 - **回调地址（builder review 裁决）**：优先用 bk-ci 传入的 callbackUrl，为空则回退到 `BKCI_CALLBACK_BASE_URL=http://gateway:80`；禁止硬编码宿主 localhost。
-- **申请响应字段（builder review 裁决）**：按 `ApplicationVO` / `GradeManagerApplicationResponse` / `CallbackApplicationResponese` 三组的精确字段实现，`sn=STUB-<n>`，callbackId 与 n 同值，`role_id` 取 grade manager id。
+- **申请响应字段（builder review 裁决）**：按 `ApplicationVO` / `GradeManagerApplicationResponse` / `CallbackApplicationResponese` 三组的精确字段实现，`sn=STUB-<n>`，callbackId 为 bk-ci 传入的 UUID 字符串并原样保存，`role_id` 取 grade manager id。
 
 ## 留给实现者的开放项（可在计划阶段细化）
 

@@ -36,7 +36,8 @@ data class StubApplication(
     val applicant: String,
     val status: String,
     val callbackId: Int,
-    val approveResult: String? = null
+    val approveResult: String? = null,
+    val externalCallbackId: String? = null
 )
 
 @Table("stub_ticket")
@@ -45,12 +46,17 @@ data class StubTicket(
     val status: String,
     val token: String,
     val callbackId: Int,
-    val applyId: Int
+    val applyId: Int,
+    val externalCallbackId: String? = null,
+    val callbackUrl: String? = null
 )
 
 object Ids {
     private val counter = AtomicInteger(0)
     fun next(): Int = counter.incrementAndGet()
+    fun advanceTo(value: Int) {
+        counter.updateAndGet { current -> maxOf(current, value) }
+    }
 }
 
 fun snOf(n: Int): String = "STUB-$n"

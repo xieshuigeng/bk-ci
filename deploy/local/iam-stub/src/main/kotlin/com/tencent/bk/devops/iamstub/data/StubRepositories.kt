@@ -11,10 +11,13 @@ interface MemberRepo : CrudRepository<StubMember, Long> {
 
 interface ApplicationRepo : CrudRepository<StubApplication, Int> {
     fun findByStatus(status: String): List<StubApplication>
+    fun findBySn(sn: String): List<StubApplication>
+    fun findByExternalCallbackId(externalCallbackId: String): List<StubApplication>
 }
 
 interface GradeManagerRepo : CrudRepository<StubGradeManager, Int>
 
 interface TicketRepo : CrudRepository<StubTicket, String> {
     fun findByCallbackId(callbackId: Int): List<StubTicket>
+    fun findByExternalCallbackId(externalCallbackId: String): List<StubTicket>
 }
