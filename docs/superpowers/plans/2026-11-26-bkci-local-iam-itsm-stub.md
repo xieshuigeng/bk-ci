@@ -57,7 +57,7 @@
 - Produces: `IamStubApplication`（`@SpringBootApplication`），供后续 `@SpringBootTest` 使用。
 - Produces: 构建命令 `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test`（工作目录为仓库根 `/home/xiesg/test/bk-ci`）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `ResponseEnvelopeTest.kt`：
 ```kotlin
@@ -76,12 +76,12 @@ class ResponseEnvelopeTest {
 ```
 （`jacksonObjectMapper()` 来自 `com.fasterxml.jackson.module.kotlin.jacksonObjectMapper`，`assertThat` 来自 AssertJ。）
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*ResponseEnvelopeTest'`
 Expected: FAIL，`Unresolved reference: ResponseEnvelope` 或构建配置缺失。
 
-- [ ] **Step 3: 实现骨架与信封**
+- [x] **Step 3: 实现骨架与信封**
 
 `settings.gradle.kts`：`rootProject.name = "bkci-local-iam-stub"`。
 `build.gradle.kts`：`plugins` 用 `kotlin("jvm") version "1.9.24"`、`org.springframework.boot version "3.4.0"`、`io.spring.dependency-management version "1.1.6"`；`repositories { mavenCentral() }`；依赖 `spring-boot-starter-web`、`spring-boot-starter-data-jdbc`、`runtimeOnly("com.h2database:h2")`、`testImplementation("org.springframework.boot:spring-boot-starter-test")`；`kotlin { jvmToolchain(17) }`。
@@ -105,12 +105,12 @@ stub:
 ```
 `ResponseEnvelope.kt` 与 `IamStubApplication.kt` 按签名实现，`ResponseEnvelope` 带 `companion object { fun <T> ok(data: T): ResponseEnvelope<T> = ResponseEnvelope(data = data) }`。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*ResponseEnvelopeTest'`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub
@@ -135,7 +135,7 @@ git commit -m "feat(iam-stub): bootstrap independent Gradle build and response e
 - Produces: `object Ids { fun next(): Int }`（`AtomicInteger` 从 1 起）；`fun snOf(n: Int) = "STUB-$n"`。
 - Produces: `class SeedLoader(@Value("\${stub.seed-path}") private val seedPath: String, ...)`：`ApplicationRunner`，若 `seedPath` 非空且目录存在则从 `0003~0007*.json` 解析出 grade manager / group 种子，否则用内置示例（1 个 grade manager id=1001、2 个 group id=10001/10002、2 个 member）。种子必须幂等。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `SeedLoaderTest.kt`（`@SpringBootTest` + `@ActiveProfiles("test")`，测试用 H2 内存库覆盖 datasource url）：
 ```kotlin
@@ -149,22 +149,22 @@ fun `seed produces non-empty groups and deterministic sn`() {
 ```
 另加幂等测试：重复调用 `seedLoader.run()` 后 `groupRepo.count()` 不变。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*SeedLoaderTest'`
 Expected: FAIL，`Unresolved reference: SeedLoader` 或 `groupRepo` 未定义。
 
-- [ ] **Step 3: 实现 schema、实体、Repository、SeedLoader**
+- [x] **Step 3: 实现 schema、实体、Repository、SeedLoader**
 
 `schema.sql` 建 5 张表：`stub_grade_manager(id INT PK, name, project)`、`stub_group(id INT PK, name, description, project)`、`stub_member(id BIGINT AUTO_INCREMENT PK, group_id INT, type VARCHAR(32), member_id VARCHAR(255), expired_at BIGINT)`、`stub_application(id INT AUTO_INCREMENT PK, sn VARCHAR(64), group_ids VARCHAR(512), applicant VARCHAR(255), status VARCHAR(32), callback_id INT, approve_result VARCHAR(16))`、`stub_ticket(sn VARCHAR(64) PK, status VARCHAR(32), token VARCHAR(64), callback_id INT, apply_id INT)`。全部 `CREATE TABLE IF NOT EXISTS`。
 `SeedLoader` 用 Jackson `ObjectMapper` 读目录，JSON 里取 `operations[].operation` 与 `data.id/name`；解析失败时降级到内置示例并打日志，不让启动失败。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*SeedLoaderTest'`
 Expected: PASS（含幂等测试）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -189,7 +189,7 @@ git commit -m "feat(iam-stub): add H2 state, repositories and idempotent seed"
   - `POST /api/v2/policy/systems/{system}/query/` → `data={"op":"AND","content":[]}`
 - 所有端点忽略请求体具体内容，只按路径返回；`x-bkapi-authorization` 头不强制校验（桩简化）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `@WebMvcTest(IamBasicController::class)` + MockMvc，一个测试覆盖 5 个端点，断言：
 ```kotlin
@@ -205,21 +205,21 @@ mockMvc.perform(post("/api/v2/policy/systems/bk_ci_rbac/query/")
     .andExpect(jsonPath("$.data.op").value("AND"))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamBasicControllerTest'`
 Expected: FAIL，404 或类未定义。
 
-- [ ] **Step 3: 实现 `IamBasicController`**
+- [x] **Step 3: 实现 `IamBasicController`**
 
 按 Interfaces 中的路径与返回形状实现，`@RestController`。`code` 必须来自 Task 1 的 `ResponseEnvelope` 默认值（数值 0，禁止手拼字符串）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamBasicControllerTest'`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -256,7 +256,7 @@ git commit -m "feat(iam-stub): implement IAM token and policy endpoints"
   - `GET /grade_managers/{id}/subject_templates/`、`GET /groups/{groupId}/subject_templates/` → `{"count":0,"results":[]}`
   - `POST /grade_managers/-/applications/`、`POST /grade_managers/{id}/applications/`、`POST /groups/-/renew/applications/` → 交由 Task 5 的 `IamApplicationController` 处理，本任务不实现这些路径。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `@WebMvcTest(IamManagementController::class)` + MockMvc（mock `GroupStateService`），三个测试：
 ```kotlin
@@ -285,21 +285,21 @@ git commit -m "feat(iam-stub): implement IAM token and policy endpoints"
 ```
 （`hasItem` 来自 `org.hamcrest.Matchers.hasItem`。第三个测试不能用纯 `@WebMvcTest` mock service，改用 `@SpringBootTest` + MockMvc + 真实 `GroupStateService` + H2 内存库。）
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamManagementControllerTest'`
 Expected: FAIL，404 或 bean 未定义。
 
-- [ ] **Step 3: 实现 `GroupStateService` 与 `IamManagementController`**
+- [x] **Step 3: 实现 `GroupStateService` 与 `IamManagementController`**
 
 `GroupStateService` 用 Task 2 的 Repository 做读写；`addMember` 写 `memberId` 且 `expiredAt` 存传入值或 0；`memberBelongs` 查 `stub_member`。Controller 用 `@RequestMapping` 收敛前缀，`@GetMapping`/`@PostMapping`/`@PutMapping`/`@DeleteMapping` 按 Interfaces 逐条映射，返回 `ResponseEnvelope.ok(data)`（或 Task 1 的构造函数）。组列表分页参数用 `@RequestParam(required=false)` 接收但当前忽略过滤。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamManagementControllerTest'`
 Expected: PASS（含 POST 无尾斜杠与 belong/members 一致两个钉死测试）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -330,7 +330,7 @@ git commit -m "feat(iam-stub): implement IAM management, members and belong APIs
   - `POST /groups/-/renew/applications/` → `data={}`
 - 本任务**不触发** ITSM 回调；回调编排在 Task 6。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `@SpringBootTest` + MockMvc + H2 内存库，两个测试：
 ```kotlin
@@ -353,21 +353,21 @@ git commit -m "feat(iam-stub): implement IAM management, members and belong APIs
 ```
 另加用户组申请测试：`POST /groups/-/applications/` 返回 `data.ids` 为数组且元素为数值。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamApplicationControllerTest'`
 Expected: FAIL，404 或 bean 未定义。
 
-- [ ] **Step 3: 实现 `ApplicationService` 与 `IamApplicationController`**
+- [x] **Step 3: 实现 `ApplicationService` 与 `IamApplicationController`**
 
 `createGradeManagerApplication` 用 `Ids.next()` 分配 id/callbackId，`snOf(n)` 生成 sn，写 `stub_ticket`（status=RUNNING，token 固定 `stub-token`）与 `stub_application`。`approve` 按 callbackId 查 ticket/application，调 `GroupStateService.addMember` 写入申请人，更新 status=APPROVED，`role_id` 返回 1001（种子 grade manager id）。`cancel` 更新 status=CANCELLED 并返回 `message="OK"` 的信封。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IamApplicationControllerTest'`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -400,7 +400,7 @@ git commit -m "feat(iam-stub): implement application create, approve and cancel"
   - `POST /itsm-stub/api/approve`（body `{"sn":"STUB-n","approved":true,"callbackUrl":""|null}`）→ 查 ticket 得 callbackId → `applicationService.approve(callbackId, mapOf("sn" to sn))` → `itsmCallbackService.notifyApproval(...)` → `data={"ok":true}`
   - `POST /stub/api/approve-group`（body `{"id":n,"approved":true}`）→ `applicationService.approve(n, ...)` → `data={"ok":true}`（用户组链，不回调 ITSM）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `ItsmControllerTest`（`@WebMvcTest`）：
 ```kotlin
@@ -423,21 +423,21 @@ server.verify()
 ```
 另加测试：传入 `callbackUrl="http://other:9000/cb"` 时请求打到该地址（覆盖优先级）。
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*Itsm*Test'`
 Expected: FAIL，类或端点未定义。
 
-- [ ] **Step 3: 实现 ITSM 控制器、回调服务与审批编排端点**
+- [x] **Step 3: 实现 ITSM 控制器、回调服务与审批编排端点**
 
 `ItsmCallbackService` 用注入的 `RestTemplate`（在配置类里声明 bean）；`notifyApproval` 用 `postForEntity`，body 用 `Map<String,Any>` 交给 Jackson。`StubApprovalController` 按 Interfaces 编排，回调失败时记录日志但不让接口 500（桩要可重复点）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*Itsm*Test'`
 Expected: PASS（含 gateway 地址钉死测试）。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -459,7 +459,7 @@ git commit -m "feat(iam-stub): implement ITSM endpoints and callback orchestrati
   - `GET /itsm-stub/` 与 `GET /itsm-stub/index.html`（produces `text/html;charset=UTF-8`）→ HTML 列出 `stub_ticket`（sn、status），每行按钮调用 `POST /itsm-stub/api/approve`。浏览器请求的 `#/ticket/approval-iframe` 是 fragment，不会发到服务端，所以服务端只需映射根路径。
   - 页面内联 `<script>` 用 `fetch` 调上述端点，成功后 `location.reload()`；内联 CSS，无外部资源。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `@SpringBootTest` + MockMvc + H2 内存库（先通过 `ApplicationService`/`TicketRepo` 插入一条 sn=`STUB-1` 的 pending 单）：
 ```kotlin
@@ -473,21 +473,21 @@ mockMvc.perform(get("/itsm-stub/"))
     .andExpect(content().string(containsString("/itsm-stub/api/approve")))
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IframePageControllerTest'`
 Expected: FAIL，404 或内容不含 sn。
 
-- [ ] **Step 3: 实现两个页面**
+- [x] **Step 3: 实现两个页面**
 
 按 Interfaces 返回 HTML 字符串；对 sn 做 HTML 转义（防止种子数据含特殊字符破坏页面）。按钮用 `<button onclick="...">`，JS 用 `fetch` + JSON body。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `../../../src/backend/ci/gradlew -p deploy/local/iam-stub test --tests '*IframePageControllerTest'`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/iam-stub/src
@@ -512,16 +512,16 @@ git commit -m "feat(iam-stub): add minimal iframe pages for apply and approval"
 - Produces: `bkenv.properties` 尾部覆盖块新增/改值：`BK_CI_AUTH_PROVIDER=rbac`、`BK_CI_IAM_APIGW_URL=http://iam-stub:8080`、`BK_CI_ITSM_APIGW_URL=http://iam-stub:8080`、`BK_CI_IAM_SYSTEM_ID=bk_ci_rbac`、`BK_CI_IAM_MIGRATE_TOKEN=stub-token`、`BK_CI_IAM_URL_PREFIX=http://localhost:8081/iam-stub`、`BK_CI_ITSM_URL_PREFIX=http://localhost:8081/itsm-stub`。
 - Produces: `verify-local.sh`：curl 检查 4 件事——token 端点 code=0 且数值、组列表 count>0、两个页面 HTTP 200 且含 `STUB-`、ITSM token verify `is_passed=true`。
 
-- [ ] **Step 1: 写失败测试（验收脚本先写）**
+- [x] **Step 1: 写失败测试（验收脚本先写）**
 
 `verify-local.sh` 按 Interfaces 写 4 个 curl 断言，每个失败都 `exit 1` 并打印具体 URL。此时脚本因桩未接线而失败。
 
-- [ ] **Step 2: 跑脚本确认失败**
+- [x] **Step 2: 跑脚本确认失败**
 
 Run: `bash deploy/local/iam-stub/verify-local.sh`
 Expected: FAIL，连接被拒绝或字段不符。
 
-- [ ] **Step 3: 写 Dockerfile、setup SQL、compose 与配置**
+- [x] **Step 3: 写 Dockerfile、setup SQL、compose 与配置**
 
 `Dockerfile` 多阶段：
 ```dockerfile
@@ -544,7 +544,7 @@ ENTRYPOINT ["java", "-jar", "iam-stub.jar"]
 `setup-local-auth.sql`：插入测试项目 `stub-demo` 对应的 `T_AUTH_RESOURCE_GROUP` 行，`relation_id` 必须等于桩种子 group id `10001`；SQL 只写 `devops_ci_auth`，不写任何其它库，且用 `INSERT ... WHERE NOT EXISTS` 幂等。
 `docker-compose.yml` 与 `bkenv.properties` 按 Interfaces 精确修改；`README.md` 说明「重建 frontend/auth 容器 → 执行 setup SQL → `docker compose up -d --build iam-stub` → 跑 verify-local.sh」。
 
-- [ ] **Step 4: 跑脚本确认通过并做静态检查**
+- [x] **Step 4: 跑脚本确认通过并做静态检查**
 
 Run:
 ```bash
@@ -555,7 +555,7 @@ git diff --check
 ```
 Expected: `COMPOSE_OK`；桩容器健康；验收脚本 4 项全 PASS；`git diff --check` 无输出。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add deploy/local/docker-compose.yml deploy/local/bkenv.properties deploy/local/README.md deploy/local/iam-stub
