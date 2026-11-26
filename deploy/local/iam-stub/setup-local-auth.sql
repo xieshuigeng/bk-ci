@@ -9,6 +9,23 @@ SET @project_code = (SELECT english_name FROM devops_ci_project.T_PROJECT WHERE 
 DELETE FROM T_AUTH_RESOURCE_GROUP
 WHERE PROJECT_CODE = 'stub-demo' AND GROUP_NAME = 'Developer' AND RELATION_ID = '10001';
 
+-- rbac 模式下“超管可见项目”从 T_AUTH_RESOURCE(resource_type='project') 读取；
+-- 本地旧项目是 sample 模式创建的，表里没有这行，补上后我的项目/申请权限才不会空白。
+INSERT INTO T_AUTH_RESOURCE (
+    PROJECT_CODE, RESOURCE_TYPE, RESOURCE_CODE, RESOURCE_NAME,
+    IAM_RESOURCE_CODE, ENABLE, RELATION_ID, CREATE_USER, UPDATE_USER
+)
+SELECT @project_code, 'project', @project_code, p.project_name,
+       @project_code, b'1', '10001', 'system', 'system'
+FROM devops_ci_project.T_PROJECT p
+WHERE p.english_name = @project_code AND p.deleted_at IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM T_AUTH_RESOURCE
+    WHERE PROJECT_CODE = @project_code
+      AND RESOURCE_TYPE = 'project'
+      AND RESOURCE_CODE = @project_code
+  );
+
 INSERT INTO T_AUTH_RESOURCE_GROUP (
     PROJECT_CODE, RESOURCE_TYPE, RESOURCE_CODE, RESOURCE_NAME,
     IAM_RESOURCE_CODE, GROUP_CODE, GROUP_NAME, DEFAULT_GROUP, RELATION_ID, DESCRIPTION

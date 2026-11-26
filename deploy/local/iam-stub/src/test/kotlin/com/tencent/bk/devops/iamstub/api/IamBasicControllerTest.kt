@@ -22,6 +22,16 @@ class IamBasicControllerTest @Autowired constructor(val mockMvc: MockMvc) {
     }
 
     @Test
+    fun `IAM responses carry X-Request-Id required by SDK`() {
+        mockMvc.perform(get("/api/v1/model/systems/bk_ci_rbac/token"))
+            .andExpect(status().isOk)
+            .andExpect(
+                org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                    .string("X-Request-Id", org.hamcrest.Matchers.not(org.hamcrest.Matchers.emptyOrNullString()))
+            )
+    }
+
+    @Test
     fun `model query returns all five sections`() {
         mockMvc.perform(get("/api/v1/model/systems/bk_ci_rbac/query"))
             .andExpect(status().isOk)
@@ -51,7 +61,6 @@ class IamBasicControllerTest @Autowired constructor(val mockMvc: MockMvc) {
                 .contentType(APPLICATION_JSON).content("{}")
         )
             .andExpect(status().isOk)
-            .andExpect(jsonPath("$.data.op").value("AND"))
-            .andExpect(jsonPath("$.data.content").isArray)
+            .andExpect(jsonPath("$.data.op").value("any"))
     }
 }

@@ -200,6 +200,11 @@ services:
       - |
         export INSTALL_PATH=/data/workspace BK_HOME=/data/bkhome
         cd /etc/bkci && /data/workspace/scripts/render_tpl -m . /data/workspace/templates/gateway*
+        # bkenv.properties 的 BK_CI_AUTH_PROVIDER=rbac 只应作用于后端(发起 IAM 申请/回调);
+        # 本地没有 bk_login/OAuth 服务, 网关用户态鉴权若也用 rbac 会强制要 bk_token 并 401,
+        # 导致所有用户态页面空白。网关固定使用 sample(注入 admin), 后端保持 rbac 对接 IAM 桩。
+        sed -i "s|conf/lua/auth/auth_user-[^']*\\.lua|conf/lua/auth/auth_user-sample.lua|" /data/workspace/gateway/core/auth.conf
+        grep -q 'auth_user-sample.lua' /data/workspace/gateway/core/auth.conf || { echo 'patch gateway user auth failed' >&2; exit 1; }
         # 本地 docker(非 k8s): auth_gray.lua 在无 NAMESPACE 时把 X-FRONTEND-SERVICE 设为 config.kubernetes.domain,
         # 模板硬编码 kubernetes.demo.com, 改指向 Consul DNS 中注册的 frontend(需先执行 register-frontend.sh)。
         sed -i 's/kubernetes\.demo\.com/frontend.service.consul/g' /data/workspace/gateway/core/lua/init.lua

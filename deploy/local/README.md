@@ -248,8 +248,10 @@ bash deploy/local/test/icon-urls-test.sh    # 运行库全部 icon URL 经网关
 ### 接线位置
 
 - 后端：`bkenv.properties` 尾部 Step11 覆盖块把 IAM SDK（`auth.apigwUrl`）和 ITSM service（`itsm.url`）指向 `http://iam-stub:8080`（compose 网络内）。
+- 网关：`BK_CI_AUTH_PROVIDER=rbac` 只作用于后端；本地没有 bk_login/OAuth，网关用户态鉴权若也用 rbac 会因为缺 `bk_token` 全量 401。`docker-compose.yml` 在 gateway 启动命令里固定把 `auth_user-*.lua` 改为 `auth_user-sample.lua`（注入 `admin`），后端仍保持 rbac 对接桩。
 - 浏览器：同块把 `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` 指向 `http://localhost:8081/iam-stub` 与 `http://localhost:8081/itsm-stub`（宿主可达）。
 - 展示：复用权限中心已有 iframe——「我的申请」显示 IAM 用户组申请单，「我的审批」显示 ITSM 项目审批工单；不新增菜单/路由。
+- 配置文件生效：后端读的是 `deploy/local/rendered/etc/ci/*.yml`（只读挂载），不是 `bkenv.properties` 本身；改完 bkenv 必须先渲染再重建容器，否则 `idProvider` 仍是旧的 `sample`。
 
 ### 部署步骤
 
@@ -257,7 +259,13 @@ bash deploy/local/test/icon-urls-test.sh    # 运行库全部 icon URL 经网关
 # 1) 把 bkenv-iam-stub.env 的内容追加到 deploy/local/bkenv.properties 末尾（该文件被 .gitignore 忽略）
 #    当前检出已追加；换机重建时执行：
 cat deploy/local/iam-stub/bkenv-iam-stub.env >> deploy/local/bkenv.properties
-# 改配置后必须重建读取 bkenv.properties 的容器
+# 改配置后必须先渲染后端配置（后端只读 rendered/etc/ci，不读 bkenv.properties）
+REPO=$(git rev-parse --show-toplevel)
+cd "$REPO/deploy/local"
+./render_tpl -u -p "$PWD/rendered" -m . -e "$PWD/bkenv.properties" \
+  "$REPO/support-files/templates/#etc#ci#*.yml"
+cd "$REPO"
+# 再重建读取配置的容器
 docker compose -f deploy/local/docker-compose.yml up -d --force-recreate --no-deps frontend gateway auth project
 
 # 2) 一次性预置本地 devops_ci_auth 测试数据（幂等，可重复执行）
@@ -277,4 +285,4 @@ bash deploy/local/iam-stub/verify-local.sh
 1. **用户组申请**：在本地已有项目（默认 `demotest`）的「申请权限」页提交加入种子组 `10001` → 「我的申请」iframe 出现 `STUB-n` → 点「通过」 → 等待 `syncIamGroupMembersOfApply` 定时同步 → MySQL 中 `T_AUTH_RESOURCE_GROUP_MEMBER` 出现该用户，`T_AUTH_RESOURCE_GROUP_APPLY.STATUS='SUCCEED'`。点「驳回」则单据变为 `CANCELLED`，不会同步成员。
 2. **项目审批**：创建项目 → 「我的审批」iframe 出现 `STUB-n` → 点「通过」 → 桩回调 bk-ci `/ms/auth/api/external/auth/itsm/create_callback` → MySQL 中 `T_AUTH_ITSM_CALLBACK.APPROVE_RESULT` 更新，项目资源与默认组创建完成。「驳回」会走 cancel 并发 `approve_result=false` 回调。
 
-回调地址优先取 bk-ci 创建工单时传入并落库的 `callback_url`（`localhost`/`127.0.0.1` 会在容器内失效，自动忽略），为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）。bk-ci 传入的 `callbackId` 是 UUID，桩原样保存并用它定位单据；桩日志可见 `/applications/{callbackId}/approve` 调用。`verify-local.sh` 仅做 HTTP 冒烟，两条链的落库结果需按上表在 MySQL 手工核对。
+回调地址优先取 bk-ci 创建工单时传入并落库的 `callback_url`（`localhost`/`127.0.0.1` 会在容器内失效，自动忽略），为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）。bk-ci 传入的 `callbackId` 是 UUID，桩原样保存并用它定位单据；桩日志可见 `/applications/{callbackId}/approve` 调用。`verify-local.sh` 共 6 项 HTTP 冒烟（token/组列表/两个页面/ITSM token/网关用户态 API/项目列表非空），不含浏览器点击；两条链的落库结果仍需按上表在 MySQL 手工核对。

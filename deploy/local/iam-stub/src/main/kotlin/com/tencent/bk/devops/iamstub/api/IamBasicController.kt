@@ -42,10 +42,12 @@ class IamBasicController {
         return ResponseEnvelope.ok(actions.associate { it.toString() to true })
     }
 
+    /** SDK 的 groupRbacInstanceByType 只认 OR/EQUAL/IN/ANY 等顶层算子，AND 会抛 IamException。
+     *  operator 线上值是小写（枚举的 JsonCreator 按 operator 字符串匹配），"any" 表示超管，
+     *  bk-ci 会据它返回全部项目，正好满足本地桩的放开策略。 */
     @PostMapping("/api/v2/policy/systems/{system}/query/")
     fun query(
         @PathVariable system: String,
         @RequestBody(required = false) body: Map<String, Any>?
-    ): ResponseEnvelope<Map<String, Any>> =
-        ResponseEnvelope.ok(mapOf("op" to "AND", "content" to emptyList<Any>()))
+    ): ResponseEnvelope<Map<String, Any>> = ResponseEnvelope.ok(mapOf("op" to "any"))
 }
