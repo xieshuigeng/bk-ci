@@ -240,3 +240,40 @@ bash deploy/local/test/icon-urls-test.sh    # 运行库全部 icon URL 经网关
 - 未部署 codecc/agentless 等可选组件；`CodeCCCheckAtom` 插件由公开 fork 自行构建安装（9 个默认插件均已装），其运行时兼容性未验证。
 - 模板商店为空（`GET /store/api/user/market/template/list` → `count:0`；项目侧 `GET /process/api/user/pipeline/template/v2/<project>/allTemplates` → `2101034 模板不存在`）。**当前镜像**下新建流水线仍只能「导入」或走 API：`POST /process/api/user/pipelines/{projectId}`（body 为流水线 `Model`）。代码层面已新增空白创建入口（`openspec/changes/add-blank-pipeline-creation-entry/`，提交 `2255681`），但尚未随 release 镜像重建、也未完成浏览器验证，故不能按"已可用"对待。
 - 原子图标 URL 当前经网关全部 200；此前社区包缺失的 `tapdTrigger.png`/`scmGitTrigger.png` 已由仓库通用图补齐，artifactory 静态文件按启动自动播种。前端回退单元 `AtomLogo`（`openspec/changes/add-atom-logo-load-fallback/`，提交 `2255681`）仍未进镜像、未验证，未来新增缺失文件仍可能空白；见排障节。
+
+## 本地 IAM/ITSM 协议兼容桩
+
+`deploy/local/iam-stub/` 是一个独立 Kotlin + Spring Boot 服务，同时提供 IAM SDK API、ITSM API 和两个最简 HTML 页面。它让本地 bk-ci 以 `auth.idProvider=rbac` 跑通两条最小闭环，不改 bk-ci 业务代码，也不拉起 PaaS/APIGW/ESB/SSM。
+
+### 接线位置
+
+- 后端：`bkenv.properties` 尾部 Step11 覆盖块把 IAM SDK（`auth.apigwUrl`）和 ITSM service（`itsm.url`）指向 `http://iam-stub:8080`（compose 网络内）。
+- 浏览器：同块把 `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` 指向 `http://localhost:8081/iam-stub` 与 `http://localhost:8081/itsm-stub`（宿主可达）。
+- 展示：复用权限中心已有 iframe——「我的申请」显示 IAM 用户组申请单，「我的审批」显示 ITSM 项目审批工单；不新增菜单/路由。
+
+### 部署步骤
+
+```bash
+# 1) 把 bkenv-iam-stub.env 的内容追加到 deploy/local/bkenv.properties 末尾（该文件被 .gitignore 忽略）
+#    当前检出已追加；换机重建时执行：
+cat deploy/local/iam-stub/bkenv-iam-stub.env >> deploy/local/bkenv.properties
+# 改配置后必须重建读取 bkenv.properties 的容器
+docker compose -f deploy/local/docker-compose.yml up -d --force-recreate --no-deps frontend gateway auth project
+
+# 2) 一次性预置本地 devops_ci_auth 测试数据（幂等，可重复执行）
+docker exec -i bkci-mysql mysql -uroot -proot123 devops_ci_auth \
+  < deploy/local/iam-stub/setup-local-auth.sql
+
+# 3) 构建并启动桩服务（端口映射 8081:8080，H2 文件卷 iam-stub-data）
+docker compose -f deploy/local/docker-compose.yml up -d --build iam-stub
+
+# 4) 端到端冒烟验收
+bash deploy/local/iam-stub/verify-local.sh
+```
+
+### 两条验收链
+
+1. **用户组申请**：在「申请权限」页提交加入种子组 `10001` → 「我的申请」iframe 出现 `STUB-n` → 点「通过」 → 等待 `syncIamGroupMembersOfApply` 定时同步 → MySQL 中 `T_AUTH_RESOURCE_GROUP_MEMBER` 出现该用户，`T_AUTH_RESOURCE_GROUP_APPLY.STATUS='SUCCEED'`。
+2. **项目审批**：创建项目 → 「我的审批」iframe 出现 `STUB-n` → 点「通过」 → 桩回调 bk-ci `/ms/auth/api/external/auth/itsm/create_callback` → MySQL 中 `T_AUTH_ITSM_CALLBACK.APPROVE_RESULT` 更新，项目资源与默认组创建完成。
+
+回调地址优先取 bk-ci 请求传入的 callbackUrl，为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）；桩日志可见 `/applications/{callbackId}/approve` 调用。

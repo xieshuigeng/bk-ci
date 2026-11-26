@@ -289,6 +289,24 @@ services:
       - ./icon-assets:/opt/icon-assets:ro
   metrics:     { <<: *backend, container_name: bkci-metrics,     command: ["/bin/bash", "/entrypoint.sh", "metrics"] }
 
+  # ---------- 本地 IAM/ITSM 协议兼容桩 ----------
+  iam-stub:
+    build:
+      context: ../..
+      dockerfile: deploy/local/iam-stub/Dockerfile
+    image: bkci-local/iam-stub:local
+    container_name: bkci-iam-stub
+    restart: unless-stopped
+    networks:
+      - bkci
+    ports:
+      - "8081:8080"
+    environment:
+      BKCI_CALLBACK_BASE_URL: http://gateway:80
+    volumes:
+      - iam-stub-data:/app/data
+    logging: *default-logging
+
   # ---------- 构建资源（wave B，docker build）----------
   dockerhost:
     image: bkci-local/bkci-backend:v4.2.0-rc.7
@@ -449,3 +467,4 @@ volumes:
   consul-data:
   bkrepo-mongo-data:
   rabbitmq-data:
+  iam-stub-data:
