@@ -1,0 +1,15 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/iam-stub;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+stub:
+  system-id: bk_ci_rbac
+  callback-base-url: ${BKCI_CALLBACK_BASE_URL:http://gateway:80}
+  seed-path: ${STUB_SEED_PATH:}
