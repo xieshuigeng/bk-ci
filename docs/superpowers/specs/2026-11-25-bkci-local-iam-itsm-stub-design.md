@@ -19,6 +19,8 @@
 
 - **目标**：本地 `auth.idProvider=rbac` 能跑通真实 bk-ci 代码路径（IAM SDK + ITSM service + 回调 listener）；权限中心「我的申请 / 我的审批」iframe 都能看到数据；**两条独立链路都打通最小闭环**：① IAM 用户组申请链（申请加入组 → IAM approve → bk-ci 同步成员 → `T_AUTH_RESOURCE_GROUP_MEMBER` 出现行）；② ITSM 项目审批链（项目分级管理员申请 → 桩审批 → ITSM 回调 → IAM approve/cancel → 申请状态落库）；桩服务可作为后续集成测试 test double。
 - **网关例外**：本地无 bk_login/OAuth，`BK_CI_AUTH_PROVIDER=rbac` 只能作用于后端；网关 `/auth/user` 固定用 `auth_user-sample.lua` 注入 `admin`，否则所有用户态 API 因缺 `bk_token` 返回 401、页面全空。此差异已在 `docker-compose.yml` 的 gateway 启动命令中显式修补。
+- **iframe 同源**：浏览器 iframe 前缀使用 `/iam-stub`、`/itsm-stub` 并由网关代理到桩，不能写 `localhost:8081`；跨机访问时 `localhost` 指向浏览器自身，会报“拒绝连接”。
+- **用户资料例外**：社区版兜底 `DefaultDeptServiceImpl.getUserInfo()` 固定返回 null，rbac 申请权限接口必然报 2121090。本地用 `T_USER_INFO` 预置 admin，并在 auth 容器注入 `@Primary` bean 启用已有 `AuthDeptServiceImpl` 读表；不修改 bk-ci 业务源码。
 - **非目标**：不跑上游 IAM/ITSM 真身；不实现全量 IAM 管理 API（迁移/监控等非主链路接口按需再补）；不改 bk-ci 的 auth 主逻辑；桩服务运行时不写 `devops_ci_auth` 业务库（仅允许一次性 setup SQL 预置测试数据，见下）；不追求与生产蓝鲸环境一致的权限语义（只做够用的本地模拟）。
 - **反目标（做了就算失败）**：把桩逻辑写进 `provider/sample` 造成分叉；直接改 bk-ci 业务代码适配桩；桩依赖 PaaS/APIGW/ESB/Redis 等外部底座；把凭据或运行态数据提交进仓库。
 

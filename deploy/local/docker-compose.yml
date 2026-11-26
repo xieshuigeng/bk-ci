@@ -200,6 +200,11 @@ services:
       - |
         export INSTALL_PATH=/data/workspace BK_HOME=/data/bkhome
         cd /etc/bkci && /data/workspace/scripts/render_tpl -m . /data/workspace/templates/gateway*
+        # 桩页面走同源路径(/iam-stub /itsm-stub /stub), 避免 iframe 硬编码 localhost:8081
+        # 在跨机访问时指向浏览器自身而报“拒绝连接”。
+        cp /opt/local-gateway/iam-stub-proxy.conf /data/workspace/gateway/core/iam-stub-proxy.conf
+        sed -i 's|    # 前端页面|    include iam-stub-proxy.conf;\n\n    # 前端页面|' /data/workspace/gateway/core/devops.server.conf
+        grep -q 'include iam-stub-proxy.conf' /data/workspace/gateway/core/devops.server.conf || { echo 'patch stub proxy failed' >&2; exit 1; }
         # bkenv.properties 的 BK_CI_AUTH_PROVIDER=rbac 只应作用于后端(发起 IAM 申请/回调);
         # 本地没有 bk_login/OAuth 服务, 网关用户态鉴权若也用 rbac 会强制要 bk_token 并 401,
         # 导致所有用户态页面空白。网关固定使用 sample(注入 admin), 后端保持 rbac 对接 IAM 桩。
@@ -240,6 +245,7 @@ services:
         exec /usr/local/openresty/nginx/sbin/nginx -g 'daemon off;'
     volumes:
       - ./bkenv.properties:/etc/bkci/bkenv.properties:ro
+      - ./gateway/iam-stub-proxy.conf:/opt/local-gateway/iam-stub-proxy.conf:ro
       - /data/bkci-local/gateway-files:/data/bkce/public/ci/gateway/files:ro
     depends_on:
       - consul
@@ -276,7 +282,14 @@ services:
   quality:     { <<: *backend, container_name: bkci-quality,     command: ["/bin/bash", "/entrypoint.sh", "quality"] }
   log:         { <<: *backend, container_name: bkci-log,         command: ["/bin/bash", "/entrypoint.sh", "log"] }
   notify:      { <<: *backend, container_name: bkci-notify,      command: ["/bin/bash", "/entrypoint.sh", "notify"] }
-  auth:        { <<: *backend, container_name: bkci-auth,        command: ["/bin/bash", "/entrypoint.sh", "auth"] }
+  auth:
+    <<: *backend
+    container_name: bkci-auth
+    volumes:
+      - ./rendered/etc/ci:/etc/bkci/conf:ro
+      - ./entrypoint-service.sh:/entrypoint.sh:ro
+      - ./auth-user-patch:/opt/local-auth-patch:ro
+    command: ["/bin/bash", "/opt/local-auth-patch/install-and-run.sh"]
   openapi:     { <<: *backend, container_name: bkci-openapi,     command: ["/bin/bash", "/entrypoint.sh", "openapi"] }
   websocket:   { <<: *backend, container_name: bkci-websocket,   command: ["/bin/bash", "/entrypoint.sh", "websocket"] }
   misc:        { <<: *backend, container_name: bkci-misc,        command: ["/bin/bash", "/entrypoint.sh", "misc"] }

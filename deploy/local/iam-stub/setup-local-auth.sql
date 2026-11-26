@@ -39,3 +39,23 @@ WHERE @project_code IS NOT NULL
       AND RESOURCE_TYPE = 'project'
       AND GROUP_NAME = 'Developer'
   );
+
+-- rbac 的申请权限接口会校验 deptService.getUserInfo(userId) 非 null。
+-- 社区版没有用户中心，本地补丁启用的 AuthDeptServiceImpl 从该表读取用户资料，
+-- 故预置网关注入的 admin。重复执行会刷新同一行，不会产生重复数据。
+INSERT INTO T_USER_INFO (
+    USER_ID, USER_NAME, ENABLED, DEPARTMENT_NAME, DEPARTMENT_ID,
+    FULL_DEPARTMENTS, PATH, DEPARTED, TASK_ID
+) VALUES (
+    'admin', 'admin', b'1', '本地用户', 1,
+    '[{"id":"1","name":"本地用户","full_name":"本地用户"}]', '1', b'0', 'local-seed'
+)
+ON DUPLICATE KEY UPDATE
+    USER_NAME = VALUES(USER_NAME),
+    ENABLED = VALUES(ENABLED),
+    DEPARTMENT_NAME = VALUES(DEPARTMENT_NAME),
+    DEPARTMENT_ID = VALUES(DEPARTMENT_ID),
+    FULL_DEPARTMENTS = VALUES(FULL_DEPARTMENTS),
+    PATH = VALUES(PATH),
+    DEPARTED = VALUES(DEPARTED),
+    TASK_ID = VALUES(TASK_ID);

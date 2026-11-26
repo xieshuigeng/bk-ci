@@ -249,8 +249,9 @@ bash deploy/local/test/icon-urls-test.sh    # 运行库全部 icon URL 经网关
 
 - 后端：`bkenv.properties` 尾部 Step11 覆盖块把 IAM SDK（`auth.apigwUrl`）和 ITSM service（`itsm.url`）指向 `http://iam-stub:8080`（compose 网络内）。
 - 网关：`BK_CI_AUTH_PROVIDER=rbac` 只作用于后端；本地没有 bk_login/OAuth，网关用户态鉴权若也用 rbac 会因为缺 `bk_token` 全量 401。`docker-compose.yml` 在 gateway 启动命令里固定把 `auth_user-*.lua` 改为 `auth_user-sample.lua`（注入 `admin`），后端仍保持 rbac 对接桩。
-- 浏览器：同块把 `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` 指向 `http://localhost:8081/iam-stub` 与 `http://localhost:8081/itsm-stub`（宿主可达）。
+- 浏览器：同块把 `BK_CI_IAM_URL_PREFIX` / `BK_CI_ITSM_URL_PREFIX` 指向同源路径 `/iam-stub` 与 `/itsm-stub`；`gateway/iam-stub-proxy.conf` 把这两个前缀及 `/stub/` 代理到桩。不要写 `localhost:8081`——跨机访问时浏览器会把 `localhost` 指向自己，iframe 会报“拒绝连接”。
 - 展示：复用权限中心已有 iframe——「我的申请」显示 IAM 用户组申请单，「我的审批」显示 ITSM 项目审批工单；不新增菜单/路由。
+- 用户资料：社区版没有用户中心，rbac 的申请权限接口会因 `deptService.getUserInfo(admin)` 为 null 报 2121090。`setup-local-auth.sql` 把 admin 写入 `devops_ci_auth.T_USER_INFO`；`auth-user-patch/` 在 auth 容器启动时注入一个 `@Primary` bean，启用 bk-ci 已有的 `AuthDeptServiceImpl` 读这张表。该补丁只存在于本地容器，不修改/不提交业务源码。
 - 配置文件生效：后端读的是 `deploy/local/rendered/etc/ci/*.yml`（只读挂载），不是 `bkenv.properties` 本身；改完 bkenv 必须先渲染再重建容器，否则 `idProvider` 仍是旧的 `sample`。
 
 ### 部署步骤
@@ -269,7 +270,8 @@ cd "$REPO"
 docker compose -f deploy/local/docker-compose.yml up -d --force-recreate --no-deps frontend gateway auth project
 
 # 2) 一次性预置本地 devops_ci_auth 测试数据（幂等，可重复执行）
-#    脚本从本地已有项目（默认 demotest）读取项目代号，无需先建 stub-demo 项目
+#    脚本从本地已有项目（默认 demotest）读取项目代号，无需先建 stub-demo 项目；
+#    同时写入 admin 用户资料，供本地 DeptService bean 读取。
 docker exec -i bkci-mysql mysql -uroot -proot123 devops_ci_auth \
   < deploy/local/iam-stub/setup-local-auth.sql
 
@@ -285,4 +287,4 @@ bash deploy/local/iam-stub/verify-local.sh
 1. **用户组申请**：在本地已有项目（默认 `demotest`）的「申请权限」页提交加入种子组 `10001` → 「我的申请」iframe 出现 `STUB-n` → 点「通过」 → 等待 `syncIamGroupMembersOfApply` 定时同步 → MySQL 中 `T_AUTH_RESOURCE_GROUP_MEMBER` 出现该用户，`T_AUTH_RESOURCE_GROUP_APPLY.STATUS='SUCCEED'`。点「驳回」则单据变为 `CANCELLED`，不会同步成员。
 2. **项目审批**：创建项目 → 「我的审批」iframe 出现 `STUB-n` → 点「通过」 → 桩回调 bk-ci `/ms/auth/api/external/auth/itsm/create_callback` → MySQL 中 `T_AUTH_ITSM_CALLBACK.APPROVE_RESULT` 更新，项目资源与默认组创建完成。「驳回」会走 cancel 并发 `approve_result=false` 回调。
 
-回调地址优先取 bk-ci 创建工单时传入并落库的 `callback_url`（`localhost`/`127.0.0.1` 会在容器内失效，自动忽略），为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）。bk-ci 传入的 `callbackId` 是 UUID，桩原样保存并用它定位单据；桩日志可见 `/applications/{callbackId}/approve` 调用。`verify-local.sh` 共 6 项 HTTP 冒烟（token/组列表/两个页面/ITSM token/网关用户态 API/项目列表非空），不含浏览器点击；两条链的落库结果仍需按上表在 MySQL 手工核对。
+回调地址优先取 bk-ci 创建工单时传入并落库的 `callback_url`（`localhost`/`127.0.0.1` 会在容器内失效，自动忽略），为空时回退 `BKCI_CALLBACK_BASE_URL`（默认 `http://gateway:80`）。bk-ci 传入的 `callbackId` 是 UUID，桩原样保存并用它定位单据；桩日志可见 `/applications/{callbackId}/approve` 调用。`verify-local.sh` 共 9 项 HTTP 冒烟（token/组列表/两个页面/ITSM token/网关用户态 API/项目列表非空/申请权限用户组列表/同源 iframe 可达/前端同源前缀），不含浏览器点击；两条链的落库结果仍需按上表在 MySQL 手工核对。
